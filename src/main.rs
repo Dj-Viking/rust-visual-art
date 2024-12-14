@@ -7,6 +7,7 @@ fn draw_stuff() {
     let mut engine = console_engine::ConsoleEngine::init(
         20, 20, 60
     ).unwrap();
+
     loop {
         engine.wait_frame();
         engine.clear_screen();
