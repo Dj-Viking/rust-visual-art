@@ -29,7 +29,7 @@ fn draw_stuff() {
                     pixel::pxl_bg(' ', Color::Black));
             }
         }
-        // draw # around perimeter of 'screen'
+        // draw * around perimeter of 'screen'
         engine.rect(
             2,2, 
             20,20,
