@@ -5,7 +5,10 @@ use console_engine::screen::Screen;
 
 fn draw_stuff() {
     let mut engine = console_engine::ConsoleEngine::init(
-        21, 21, 60
+        // dimensions
+        21, 21, 
+        //fps
+        60
     ).unwrap();
 
     let mut thing: i32 = 0;
@@ -23,9 +26,7 @@ fn draw_stuff() {
             {
                 engine.set_pxl(
                     i,j,
-                    pixel::pxl_bg(
-                        ' ',
-                        Color::Black));
+                    pixel::pxl_bg(' ', Color::Black));
             }
         }
         // draw # around perimeter of 'screen'
@@ -34,13 +35,15 @@ fn draw_stuff() {
             20,20,
             pixel::pxl('*'));
         engine.fill_circle(
-            7,7,
-            4,
+            7,8,
+            2,
             pixel::pxl_bg(' ', Color::Green)
         );
 
-        engine.print(0,0,
-            format!("delta counter: {}", thing.to_string()).as_str());
+        engine.print(
+            0,0,
+            format!("delta counter: {}",
+                thing.to_string()).as_str());
 
         if engine.is_key_pressed(
             KeyCode::Char('q')) 
