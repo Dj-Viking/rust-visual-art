@@ -1,10 +1,8 @@
 use console_engine::pixel;
 use console_engine::Color;
 use console_engine::KeyCode;
-fn main() {
-
+fn draw_stuff() {
     let mut engine = console_engine::ConsoleEngine::init(20, 20, 3).unwrap();
-
     loop {
         engine.wait_frame();
         engine.clear_screen();
@@ -29,4 +27,9 @@ fn main() {
         }
         engine.draw();
     }
+}
+fn main() {
+
+    draw_stuff();
+
 }
