@@ -45,7 +45,13 @@ fn draw_stuff() {
             {
                 engine.set_pxl(
                     i as i32, j as i32,
-                    pixel::pxl_bg(' ', get_color_from_coord((i.try_into().unwrap(),j.try_into().unwrap()))));
+                    pixel::pxl_bg(' ', 
+                        get_color_from_coord(
+                            (i as i32,
+                            j as i32)
+                        )
+                    )
+                );
             }
         }
         // draw * around perimeter of 'screen'
