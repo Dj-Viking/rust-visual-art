@@ -5,7 +5,7 @@ use console_engine::{pixel, Color, KeyCode, ConsoleEngine};
 const WIDTH: u32 = 80;
 const HEIGHT: u32 = 28;
 
-const FPS: u32 = 10;
+const FPS: u32 = 30;
 
 fn handle_keypress_quit(engine: &ConsoleEngine) -> bool {
     let mut should_quit = false;
@@ -14,18 +14,29 @@ fn handle_keypress_quit(engine: &ConsoleEngine) -> bool {
     }
     should_quit
 }
-fn get_color_from_coord(coord: (i32, i32), delta: i32) -> Color {
+
+fn handle_keypress_interactive(engine: &ConsoleEngine, adjust_in: i32) -> i32 {
+    if engine.is_key_pressed(KeyCode::Char('9')) {
+        return 1;
+    }
+    if engine.is_key_pressed(KeyCode::Char('0')) {
+        return -1;
+    }
+    0
+}
+
+
+fn spiral_pattern(coord: (i32, i32), delta: i32, adjust_in: i32) -> Color {
     let mut ret = Color::Black;
-    if coord.0 % 2 == 0 && coord.1 % delta == 0 {
-        ret = Color::Green;
-    }
-    else if coord.0 % delta == 0 && coord.1 % 3 == 1 {
-        ret = Color::Cyan;
-    }
-    else if coord.0 % delta / 6 == 1 && coord.1 / delta * 2 == 0 {
-        ret = Color::Blue;
-    }
-    ret
+
+    // THIS IS THE SPIRAL PATTERN! add delta to animate overtime!
+    let blue: u8 = (coord.1 * (delta - adjust_in) * coord.0 * (adjust_in * 2) ) as u8;
+    let red: u8 = (coord.1 * (delta - adjust_in) * coord.0 * (adjust_in * 2) + delta) as u8;
+    let green: u8 = 10;
+
+    let rgb_vals = (red,green,blue);
+    let rgb = Color::from(rgb_vals);
+    rgb
 }
 
 fn draw_stuff() {
@@ -37,14 +48,19 @@ fn draw_stuff() {
     ).unwrap();
 
     let mut delta: i32 = 0;
+    let mut adjust: i32 = 0;
 
     loop {
         delta += 1;
-        if delta > (HEIGHT as i32) / 2 { delta = 1 }
+
+        // reset delta after reaches half height of screen
+        if delta > 255 { delta = 1 }
+
         engine.wait_frame();
         engine.clear_screen();
 
         // collection audio samples snapshot here?
+
         for i in 0..WIDTH 
         {
             for j in 2..HEIGHT 
@@ -52,10 +68,11 @@ fn draw_stuff() {
                 engine.set_pxl(
                     i as i32, j as i32,
                     pixel::pxl_bg(' ', 
-                        get_color_from_coord(
+                        spiral_pattern(
                             (i as i32,
                             j as i32),
-                            delta
+                            delta,
+                            adjust
                         )
                     )
                 );
@@ -70,10 +87,25 @@ fn draw_stuff() {
         engine.print(1,1,
             "press q to quit");
 
+        engine.print(28,1,
+            format!("adjust runtime value: {}", adjust).as_str());
+
+        engine.print(28,0,
+            format!("color at runtime: {:?}", 
+                spiral_pattern((20, 20), delta, adjust)
+            ).as_str());
+
         if handle_keypress_quit(&engine) { break; }
+
+        adjust += handle_keypress_interactive(&engine, adjust);
 
         engine.draw();
     }
+}
+
+fn main1() {
+    let data: u8 = 255;
+    println!("hex data => {} => {:x?}", data, data);
 }
 
 fn main() {
