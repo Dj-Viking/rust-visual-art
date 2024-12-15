@@ -3,12 +3,31 @@ use console_engine::Color;
 use console_engine::KeyCode;
 use console_engine::screen::Screen;
 
+// todo: somehow determine width based on current size of terminal character (preference?)
+const WIDTH: u32 = 136;
+const HEIGHT: u32 = 40;
+
 const FPS: u32 = 60;
 
+fn get_color_from_coord(coord: (i32, i32)) -> Color {
+    let mut ret = Color::Black;
+    if coord.0 % 2 == 0 && coord.1 % 3 == 0 {
+        ret = Color::Green;
+    }
+    else if coord.0 % 2 == 0 && coord.1 % 3 == 1 {
+        ret = Color::Cyan;
+    }
+    else if coord.0 % 4 == 0 && coord.1 % 2 == 0 {
+        ret = Color::Blue;
+    }
+    ret
+}
+
 fn draw_stuff() {
+
     let mut engine = console_engine::ConsoleEngine::init(
         // dimensions
-        136, 40,
+        WIDTH, HEIGHT,
         FPS
     ).unwrap();
 
@@ -19,13 +38,14 @@ fn draw_stuff() {
         engine.wait_frame();
         engine.clear_screen();
 
-        for i in 0..136 
+        // collection audio samples snapshot here?
+        for i in 0..WIDTH 
         {
-            for j in 2..40 
+            for j in 2..HEIGHT 
             {
                 engine.set_pxl(
-                    i,j,
-                    pixel::pxl_bg(' ', Color::Green));
+                    i as i32, j as i32,
+                    pixel::pxl_bg(' ', get_color_from_coord((i.try_into().unwrap(),j.try_into().unwrap()))));
             }
         }
         // draw * around perimeter of 'screen'
@@ -36,7 +56,7 @@ fn draw_stuff() {
         // engine.fill_circle(
         //     7,8,
         //     2,
-        //     pixel::pxl_bg(' ', Color::Green)
+        //     pixel::pxl_bg(' ', Color::Red)
         // );
 
         engine.print(
