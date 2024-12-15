@@ -2,10 +2,10 @@ use console_engine::{pixel, Color, KeyCode, ConsoleEngine};
 
 // todo: somehow determine width based on current size of terminal character (preference?)
 //
-const WIDTH: u32 = 80;
-const HEIGHT: u32 = 28;
+const WIDTH: u32 = 40;
+const HEIGHT: u32 = 30;
 
-const FPS: u32 = 30;
+const FPS: u32 = 10;
 
 fn handle_keypress_quit(engine: &ConsoleEngine) -> bool {
     let mut should_quit = false;
@@ -15,7 +15,7 @@ fn handle_keypress_quit(engine: &ConsoleEngine) -> bool {
     should_quit
 }
 
-fn handle_keypress_interactive(engine: &ConsoleEngine, adjust_in: i32) -> i32 {
+fn handle_keypress_interactive(engine: &ConsoleEngine) -> i32 {
     if engine.is_key_pressed(KeyCode::Char('9')) {
         return 1;
     }
@@ -25,14 +25,21 @@ fn handle_keypress_interactive(engine: &ConsoleEngine, adjust_in: i32) -> i32 {
     0
 }
 
-
-fn spiral_pattern(coord: (i32, i32), delta: i32, adjust_in: i32) -> Color {
-    let mut ret = Color::Black;
-
+fn v2_pattern(coord: (i32, i32), delta: i32, adjust: i32) -> () {
+    // 32 / (countRef / (row + 1)) +
+    // (col + 1) / ((row + 1) / (col + 1) - Number(animVarCoeff) / countRef) +
+    // countRef * ((col + 1) * 0.05);
+}
+// chance to overflow with multiply :( maybe have to use 64 
+fn spiral_pattern(coord: (i32, i32), delta: i32, adjust: i32) -> Color {
     // THIS IS THE SPIRAL PATTERN! add delta to animate overtime!
-    let blue: u8 = (coord.1 * (delta - adjust_in) * coord.0 * (adjust_in * 2) ) as u8;
-    let red: u8 = (coord.1 * (delta - adjust_in) * coord.0 * (adjust_in * 2) + delta) as u8;
-    let green: u8 = 10;
+    //const num = row * 8 * col * Number(animVarCoeff) + countRef;
+    //
+    let col = coord.1;
+    let row = coord.0;
+    let blue: u8 = (col * (delta * adjust) * row * (adjust * 2)) as u8;
+    let red: u8 = (20) as u8;
+    let green: u8 = (10) as u8;
 
     let rgb_vals = (red,green,blue);
     let rgb = Color::from(rgb_vals);
@@ -61,16 +68,16 @@ fn draw_stuff() {
 
         // collection audio samples snapshot here?
 
-        for i in 0..WIDTH 
+        for col in 0..WIDTH 
         {
-            for j in 2..HEIGHT 
+            for row in 2..HEIGHT 
             {
                 engine.set_pxl(
-                    i as i32, j as i32,
+                    col as i32, row as i32,
                     pixel::pxl_bg(' ', 
                         spiral_pattern(
-                            (i as i32,
-                            j as i32),
+                            (col as i32,
+                            row as i32),
                             delta,
                             adjust
                         )
@@ -97,7 +104,7 @@ fn draw_stuff() {
 
         if handle_keypress_quit(&engine) { break; }
 
-        adjust += handle_keypress_interactive(&engine, adjust);
+        adjust += handle_keypress_interactive(&engine);
 
         engine.draw();
     }
