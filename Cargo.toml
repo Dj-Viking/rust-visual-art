@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 bacon = "3.5.0"
 console_engine = "2.6.1"
+fundsp = "0.20.0"
