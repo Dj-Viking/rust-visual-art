@@ -1,41 +1,54 @@
-use std::io::Write;
+use nannou::prelude::*;
 
-const CLEAR: &[u8] = b"\x1b[2J\x1b[1;1H";
-const RESET: &str = "\x1b[0m";
+struct State {
+	finx:  usize,
+	funcs: Vec<fn(f32, f32, f32) -> f32>,
+}
 
 fn main() {
-	let mut out = std::io::stdout();	
-	out.write_all(CLEAR).unwrap();
+	let init = |a: &App| { 
+		let spiral = |y: f32, x: f32, t: f32| y * t * x;
+		let v2 = |y: f32, x: f32, t: f32| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05);
 
-	const FPS: u64 = 60;
+		a.new_window()
+			.view(update)
+			.key_pressed(key)
+			.build().unwrap(); 
 
-	const WIDTH: usize = 180;
-	const HEIGHT: usize = 40;
+		State {
+			finx: 0,
+			funcs: vec![spiral, v2],
+		}
+	};
 
-	let spiral_pattern = |col: usize, row: usize, ftime: f64|
-		(20, 10, ((col as f64 * ftime * row as f64 * 2.0) % 200.0 + 56.0) as u8);
+	nannou::app(init).run();
+}
 
-	let color_to_escape = |color: (u8, u8, u8)|
-		format!("\x1b[38;2;{};{};{}m", color.0, color.1, color.2);
-
-	let mut ptime = std::time::Instant::now();
-	let mut ftime: f64 = 0.0;
-
-	loop {
-		std::thread::sleep(std::time::Duration::from_millis(1000 / FPS - ptime.elapsed().as_millis() as u64));
-		let delta = ptime.elapsed().as_millis() as f64 / 1000.0; // ACTUAL Δt
-		ftime += ptime.elapsed().as_millis() as f64 * delta;
-		ptime = std::time::Instant::now();
-
-		out.write_all(CLEAR).unwrap();
-		(0..HEIGHT).for_each(|c| {
-			(0..WIDTH).for_each(|r| { 
-				out.write_all(format!("{}█{RESET}", 
-					color_to_escape(spiral_pattern(c, r, ftime / 4.0))).as_bytes()).unwrap(); 
-			});
-			out.write_all(b"\n").unwrap();
-		});
-
-		out.flush().unwrap();
+fn key(_: &App, s: &mut State, key: Key) {
+	match key {
+		Key::Space => s.finx = (s.finx + 1) % s.funcs.len(),
+		_ => (),
 	}
+}
+
+fn update(app: &App, s: &State, frame: Frame) {
+	let draw = app.draw();
+	draw.background().color(BLACK);
+
+	let f = s.funcs[s.finx];
+	let t = app.time / 100000.0;
+
+	for r in app.window_rect().subdivisions_iter()
+		.flat_map(|r| r.subdivisions_iter())
+		.flat_map(|r| r.subdivisions_iter())
+		.flat_map(|r| r.subdivisions_iter())
+		.flat_map(|r| r.subdivisions_iter())
+		.flat_map(|r| r.subdivisions_iter()) {
+		let sat = f(r.y(), r.x(), t);
+
+		draw.rect().xy(r.xy()).wh(r.wh())
+			.hsl(sat, 1.0, 0.5);
+	}
+
+	draw.to_frame(app, &frame).unwrap();
 }
