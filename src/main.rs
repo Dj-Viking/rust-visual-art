@@ -27,13 +27,13 @@ fn main() {
 	nannou::app(init).run();
 }
 
-fn key_released(app: &App, s: &mut State, key: Key) {
+fn key_released(_: &App, s: &mut State, key: Key) {
 	match key {
 		Key::Tab => s.reset = false,
 		_ => (),
 	}
 }
-fn key_pressed(app: &App, s: &mut State, key: Key) {
+fn key_pressed(_: &App, s: &mut State, key: Key) {
 	match key {
 		Key::Space => s.finx = (s.finx + 1) % s.funcs.len(),
 		Key::Tab => s.reset = true,
@@ -41,7 +41,7 @@ fn key_pressed(app: &App, s: &mut State, key: Key) {
 	}
 }
 
-static mut MUTTIME_NOW: f32 = 0.0;
+static mut TIME_NOW: f32 = 0.0;
 
 fn update(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
@@ -51,11 +51,11 @@ fn update(app: &App, s: &State, frame: Frame) {
 
 	let t = |_: &State| {
 		unsafe {
-			MUTTIME_NOW += app.duration.since_prev_update.as_secs_f32();
+			TIME_NOW += app.duration.since_prev_update.as_secs_f32();
 			if s.reset {
-				MUTTIME_NOW = 0.0; 
+				TIME_NOW = 0.0; 
 			}
-			return MUTTIME_NOW / 1000000000.0;
+			return TIME_NOW / 1000000000.0;
 		}
 	};
 
