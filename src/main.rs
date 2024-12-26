@@ -2,6 +2,7 @@ use nannou::prelude::*;
 
 struct State {
 	finx:  usize,
+	reset: bool,
 	funcs: Vec<fn(f32, f32, f32) -> f32>,
 }
 
@@ -12,11 +13,13 @@ fn main() {
 
 		a.new_window()
 			.view(update)
-			.key_pressed(key)
+			.key_pressed(key_pressed)
+			.key_released(key_released)
 			.build().unwrap(); 
 
 		State {
 			finx: 0,
+			reset: false,
 			funcs: vec![spiral, v2],
 		}
 	};
@@ -24,30 +27,51 @@ fn main() {
 	nannou::app(init).run();
 }
 
-fn key(_: &App, s: &mut State, key: Key) {
+fn key_released(app: &App, s: &mut State, key: Key) {
 	match key {
-		Key::Space => s.finx = (s.finx + 1) % s.funcs.len(),
+		Key::Tab => s.reset = false,
 		_ => (),
 	}
 }
+fn key_pressed(app: &App, s: &mut State, key: Key) {
+	match key {
+		Key::Space => s.finx = (s.finx + 1) % s.funcs.len(),
+		Key::Tab => s.reset = true,
+		_ => (),
+	}
+}
+
+static mut MUTTIME_NOW: f32 = 0.0;
 
 fn update(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 
 	let f = s.funcs[s.finx];
-	let t = app.time / 100000.0;
+
+	let t = |_: &State| {
+		unsafe {
+			MUTTIME_NOW += app.duration.since_prev_update.as_secs_f32();
+			if s.reset {
+				MUTTIME_NOW = 0.0; 
+			}
+			return MUTTIME_NOW / 1000000000.0;
+		}
+	};
+
+	println!("what is t {}", t(s));
 
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
-		.flat_map(|r| r.subdivisions_iter()) {
-		let sat = f(r.y(), r.x(), t);
+		.flat_map(|r| r.subdivisions_iter())
+	{
+		let hue = f(r.y(), r.x(), t(s));
 
 		draw.rect().xy(r.xy()).wh(r.wh())
-			.hsl(sat, 1.0, 0.5);
+			.hsl(hue, 1.0, 0.5);
 	}
 
 	draw.to_frame(app, &frame).unwrap();
