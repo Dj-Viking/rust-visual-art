@@ -44,8 +44,6 @@ fn read_midi_input_config() -> () {
 		.map(|l| l.to_string())
 		.collect::<Vec<String>>();
 
-	println!("text {:?}", text);
-
 	for i in 0..text.clone().into_iter().len() {
 		println!("{}", text[i]);
 		// hard coded known format only 
