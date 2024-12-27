@@ -94,6 +94,8 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 		// like a vtable i guess to dynamically call a fn depending on the channel number
 		// maybe this could be configurable in a custom config file or something
 		// .midi-input-config
+		// ACTIVE_CONTROLLER=XONE
+		//
 		// [XONE]
 		// INTENSITY_CHANNEL=16
 		// TIME_DIALATION_CHANNEL=17
