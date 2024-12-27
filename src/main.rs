@@ -3,34 +3,64 @@ use nannou::prelude::*;
 use std::time::Duration;
 use std::thread;
 
-//
 static mut TIME_NOW: f32 = 0.0;
 const TIME_DIVISOR: f32 = 1000000000.0;
-
-static mut INTENSITY: u8 = 0;
-const TIMEOUT: Duration = Duration::from_millis(10);
 
 #[derive(Debug)]
 struct MidiState {
 	current_channel: u8,
 	current_intensity: u8,
-	TIMEOUT: Duration 
+	intensity_channel: u8,
+	time_dialation_channel: u8,
+	timeout: Duration 
 }
 
-const fn newMidiState(cc: u8, ci: u8, to: Duration) -> MidiState {
+const fn new_midi_state() -> MidiState {
 	MidiState {
 		current_channel: 0,
 		current_intensity: 0,
-		TIMEOUT: Duration::from_millis(10),
+		time_dialation_channel: 0,
+		intensity_channel: 0,
+		timeout: Duration::from_millis(10),
 	}
 }
 
-static mut MS: MidiState = newMidiState(0, 0, Duration::from_millis(10));
+static mut MS: MidiState = new_midi_state();
 
 struct State {
 	finx:  usize,
 	reset: bool,
 	funcs: Vec<fn(f32, f32, f32) -> f32>,
+}
+
+// TODO: figure out how to dynamically get the controller I want to use
+// from the config file and all it's mappings
+// for now only mapped up to XONE controller
+// the format is hard coded for now
+fn read_midi_input_config() -> () {
+	let text = std::fs::read_to_string(".midi-input-config").unwrap()
+		.split('\n')
+		.filter(|l| !l.is_empty())
+		.map(|l| l.to_string())
+		.collect::<Vec<String>>();
+
+	for i in 0..text.clone().into_iter().len() {
+		println!("line {}", text[i]);
+		// hard coded known format only 
+		// two entries below the XONE label in the config file for now
+		if text[i].contains("[XONE]") {
+			unsafe {
+				MS.intensity_channel = text[i + 1]
+					.split('=')
+					.collect::<Vec<&str>>()[1]
+					.parse::<u8>().unwrap();
+				MS.time_dialation_channel = text[i + 2]
+					.split('=')
+					.collect::<Vec<&str>>()[1]
+					.parse::<u8>().unwrap();
+			}
+		}
+	}
 }
 
 fn main() {
@@ -41,6 +71,9 @@ fn main() {
 		let xone_id = get_xonek2_id(&pm_ctx);
 		let info = pm_ctx.device(xone_id).unwrap();
 
+		// map the channels to which part of the effect to control
+		read_midi_input_config();
+
 		thread::spawn(move || {
 			let in_port = pm_ctx.input_port(info, 1024)
 				.unwrap();
@@ -49,7 +82,9 @@ fn main() {
 					handle_midi_msg(MyMidiMessage::new(m[0]));
 				}
 			}
-			thread::sleep(TIMEOUT);
+			unsafe {
+				thread::sleep(MS.timeout);
+			}
 		});
 
 		let spiral = |y: f32, x: f32, t: f32| y * t * x;
@@ -86,31 +121,18 @@ impl MyMidiMessage {
 }
 
 fn handle_midi_msg(m: MyMidiMessage) -> () {
-	println!("{:?}", m);
 	unsafe {
 		MS.current_channel = m.channel;
 
-		// todo: somehow match a function up to a channel number ?
-		// like a vtable i guess to dynamically call a fn depending on the channel number
-		// maybe this could be configurable in a custom config file or something
-		// .midi-input-config
-		// ACTIVE_CONTROLLER=XONE
-		//
-		// [XONE]
-		// INTENSITY_CHANNEL=16
-		// TIME_DIALATION_CHANNEL=17
-		// etc...
-		if listen_midi_channel(m.channel, 16) {
+		if listen_midi_channel(m.channel, MS.intensity_channel) {
 			MS.current_intensity = m.intensity;
-			INTENSITY = m.intensity;
 		}
 
-		println!("{}", INTENSITY);
 	}
 }
 
 fn get_xonek2_id(pm: &pm::PortMidi) -> i32 {
-	let mut ret = 0;
+	let mut ret: i32 = 0;
 	for d in pm.devices().unwrap() {
 		if d.name().contains("XONE") {
 			ret = d.id();
@@ -134,12 +156,10 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 }
 
 fn listen_midi_channel(in_channel: u8, channel: u8) -> bool {
-	unsafe {
-		if in_channel == channel {
-			return true;
-		}
-		return false;
+	if in_channel == channel {
+		return true;
 	}
+	return false;
 }
 
 fn update(app: &App, s: &State, frame: Frame) {
