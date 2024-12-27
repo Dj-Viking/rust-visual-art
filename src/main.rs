@@ -68,7 +68,7 @@ fn main() {
 	let init = |a: &App| { 
 
 		let pm_ctx = pm::PortMidi::new().unwrap();
-		let xone_id = get_xonek2_id(&pm_ctx);
+		let xone_id = get_xonek2_input_id(&pm_ctx);
 		let info = pm_ctx.device(xone_id).unwrap();
 
 		// map the channels to which part of the effect to control
@@ -131,13 +131,16 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 	}
 }
 
-fn get_xonek2_id(pm: &pm::PortMidi) -> i32 {
+fn get_xonek2_input_id(pm: &pm::PortMidi) -> i32 {
 	let mut ret: i32 = 0;
-	for d in pm.devices().unwrap() {
-		if d.name().contains("XONE") {
-			ret = d.id();
-		}
+
+	for d in pm.devices().unwrap()
+	{
+		if d.name().contains("XONE") 
+			&& d.direction() == pm::Direction::Input
+		{ ret = d.id(); break;}
 	}
+
 	ret
 }
 
