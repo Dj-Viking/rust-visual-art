@@ -45,7 +45,7 @@ fn read_midi_input_config() -> () {
 		.collect::<Vec<String>>();
 
 	for i in 0..text.clone().into_iter().len() {
-		println!("line {}", text[i]);
+		println!("{}", text[i]);
 		// hard coded known format only 
 		// two entries below the XONE label in the config file for now
 		if text[i].contains("[XONE]") {
