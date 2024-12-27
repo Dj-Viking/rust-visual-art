@@ -90,7 +90,7 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 	unsafe {
 		MS.current_channel = m.channel;
 
-		if listen_midi_channel(&raw const MS, 16) {
+		if listen_midi_channel(m.channel, 16) {
 			MS.current_intensity = m.intensity;
 			INTENSITY = m.intensity;
 		}
@@ -123,9 +123,9 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	}
 }
 
-fn listen_midi_channel(ms: *const MidiState, channel: u8) -> bool {
+fn listen_midi_channel(in_channel: u8, channel: u8) -> bool {
 	unsafe {
-		if (*ms).current_channel == channel {
+		if in_channel == channel {
 			return true;
 		}
 		return false;
