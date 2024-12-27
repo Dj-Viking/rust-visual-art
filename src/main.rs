@@ -40,9 +40,11 @@ struct State {
 fn read_midi_input_config() -> () {
 	let text = std::fs::read_to_string(".midi-input-config").unwrap()
 		.split('\n')
-		.filter(|l| !l.is_empty())
+		.filter(|l| !l.is_empty() && !l.contains("#"))
 		.map(|l| l.to_string())
 		.collect::<Vec<String>>();
+
+	println!("text {:?}", text);
 
 	for i in 0..text.clone().into_iter().len() {
 		println!("{}", text[i]);

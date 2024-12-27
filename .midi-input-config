@@ -1,5 +1,9 @@
+# use hashtags to denote comments
+
 ACTIVE_CONTROLLER=XONE
 
 [XONE]
+# fader_1
 INTENSITY_CHANNEL=16
+# fader_2
 TIME_DIALATION_CHANNEL=17
