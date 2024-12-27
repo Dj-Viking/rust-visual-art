@@ -90,6 +90,14 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 	unsafe {
 		MS.current_channel = m.channel;
 
+		// todo: somehow match a function up to a channel number ?
+		// like a vtable i guess to dynamically call a fn depending on the channel number
+		// maybe this could be configurable in a custom config file or something
+		// .midi-input-config
+		// ACTIVE_CONTROLLER=XONE
+		// INTENSITY_CHANNEL=16
+		// TIME_DIALATION_CHANNEL=17
+		// etc...
 		if listen_midi_channel(m.channel, 16) {
 			MS.current_intensity = m.intensity;
 			INTENSITY = m.intensity;
