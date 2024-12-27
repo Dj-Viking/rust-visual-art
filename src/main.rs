@@ -3,10 +3,29 @@ use nannou::prelude::*;
 use std::time::Duration;
 use std::thread;
 
+//
 static mut TIME_NOW: f32 = 0.0;
-static mut INTENSITY: u8 = 0;
 const TIME_DIVISOR: f32 = 1000000000.0;
+
+static mut INTENSITY: u8 = 0;
 const TIMEOUT: Duration = Duration::from_millis(10);
+
+#[derive(Debug)]
+struct MidiState {
+	current_channel: u8,
+	current_intensity: u8,
+	TIMEOUT: Duration 
+}
+
+const fn newMidiState(cc: u8, ci: u8, to: Duration) -> MidiState {
+	MidiState {
+		current_channel: 0,
+		current_intensity: 0,
+		TIMEOUT: Duration::from_millis(10),
+	}
+}
+
+static mut MS: MidiState = newMidiState(0, 0, Duration::from_millis(10));
 
 struct State {
 	finx:  usize,
@@ -17,6 +36,7 @@ struct State {
 fn main() {
 
 	let init = |a: &App| { 
+
 		let pm_ctx = pm::PortMidi::new().unwrap();
 		let xone_id = get_xonek2_id(&pm_ctx);
 		let info = pm_ctx.device(xone_id).unwrap();
@@ -68,7 +88,13 @@ impl MyMidiMessage {
 fn handle_midi_msg(m: MyMidiMessage) -> () {
 	println!("{:?}", m);
 	unsafe {
-		INTENSITY = m.intensity;
+		MS.current_channel = m.channel;
+
+		if listen_midi_channel(&raw const MS, 16) {
+			MS.current_intensity = m.intensity;
+			INTENSITY = m.intensity;
+		}
+
 		println!("{}", INTENSITY);
 	}
 }
@@ -97,12 +123,20 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	}
 }
 
+fn listen_midi_channel(ms: *const MidiState, channel: u8) -> bool {
+	unsafe {
+		if (*ms).current_channel == channel {
+			return true;
+		}
+		return false;
+	}
+}
+
 fn update(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 
 	let f = s.funcs[s.finx];
-
 
 
 	let t = |s: &State| {
@@ -111,13 +145,10 @@ fn update(app: &App, s: &State, frame: Frame) {
 			if s.reset {
 				TIME_NOW = 0.0; 
 			}
-			// todo: use different values other than intensity to adjust how the 
-			// visuals change based on user input 
-			return TIME_NOW / TIME_DIVISOR + (INTENSITY as f32 / 100.0) as f32;
+
+			return TIME_NOW / TIME_DIVISOR + (MS.current_intensity as f32 / 100.0) as f32;
 		}
 	};
-
-	//println!("what is t {}", t(s));
 
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
