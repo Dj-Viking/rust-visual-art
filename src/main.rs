@@ -4,9 +4,23 @@ use std::time::Duration;
 use std::thread;
 use std::collections::HashMap;
 
-
 static mut TIME_NOW: f32 = 0.0;
 const TIME_DIVISOR: f32 = 1000000000.0;
+
+const SPIRAL_FN: EffectFn = |y, x, t| y * x * t;
+
+const V2_FN: EffectFn = |y, x, t| {
+	 32.0 / 
+		(t / x) + y / 
+		(x / y - 1.0 / t) +
+		t * (y * 0.05)
+};
+
+#[derive(Debug)]
+enum ActiveFunc {
+	Spiral,
+	V2
+}
 
 #[derive(Debug)]
 struct MidiState {
@@ -16,14 +30,14 @@ struct MidiState {
 	intensity_channel: u8,
 	time_dialation_channel: u8,
 
+	func_on: ActiveFunc,
+
 	reset_channel: u8,
 	is_reset: bool,
 
 	v2_channel: u8,
-	v2_on: bool,
 
 	spiral_channel: u8,
-	spiral_on: bool,
 
 	timeout: Duration,
 }
@@ -36,14 +50,14 @@ const fn new_midi_state() -> MidiState {
 		time_dialation_channel: 0,
 		intensity_channel: 0,
 
+		func_on: ActiveFunc::Spiral,
+
 		reset_channel: 0,
 		is_reset: false,
 
 		v2_channel: 0,
-		v2_on: false,
 
 		spiral_channel: 0,
-		spiral_on: true,
 
 		timeout: Duration::from_millis(10),
 	}
@@ -52,6 +66,7 @@ const fn new_midi_state() -> MidiState {
 static mut MS: MidiState = new_midi_state();
 
 type EffectFn = fn(f32, f32, f32) -> f32;
+
 
 struct State {
 	finx:  usize,
@@ -103,12 +118,6 @@ fn read_midi_input_config() -> () {
 	}
 }
 
-
-const SPIRAL_FN: EffectFn = |y, x, t| y * t * x;
-
-const V2_FN: EffectFn = |y, x, t| {
-	 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05)
-};
 
 fn main() {
 
@@ -196,16 +205,14 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 			m.channel, MS.spiral_channel) 
 		{
 			if m.intensity == 127 {
-				MS.spiral_on = true;
-				MS.v2_on = false;
+				MS.func_on = ActiveFunc::Spiral;
 			}
 		}
 		if listen_midi_channel(
 			m.channel, MS.v2_channel) 
 		{
 			if m.intensity == 127 {
-				MS.v2_on = true;
-				MS.spiral_on = false;
+				MS.func_on = ActiveFunc::V2;
 			} 
 		}
 
@@ -219,7 +226,7 @@ fn get_xonek2_input_id(pm: &pm::PortMidi) -> i32 {
 	{
 		if d.name().contains("XONE") 
 			&& d.direction() == pm::Direction::Input
-		{ ret = d.id(); break;}
+		{ ret = d.id(); break; }
 	}
 
 	ret
@@ -250,28 +257,23 @@ fn update(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 
-	let f2 = |s: &State| {
-
-		let mut f: EffectFn = SPIRAL_FN;
+	let f3 = |s: &State| {
 		unsafe {
-			if MS.spiral_on {
-				f = s.funcmap[&MS.spiral_channel];
-			} else if MS.v2_on {
-				f = s.funcmap[&MS.v2_channel];
+			match &MS.func_on {
+				ActiveFunc::Spiral => s.funcmap[&MS.spiral_channel],
+				ActiveFunc::V2 => s.funcmap[&MS.v2_channel],
+				// default to spiral if haven't handled that func_on value yet
+				_ => s.funcs[0],
 			}
-		}	
-		f
+		}
 	};
 
-	//let f = s.funcs[s.finx]; 
-
-	let t = |_: &State| {
+	let t = || {
 		unsafe {
 			TIME_NOW += app.duration.since_prev_update.as_secs_f32();
 			if MS.is_reset {
 				TIME_NOW = 0.0; 
 			}
-
 			return TIME_NOW / TIME_DIVISOR + (MS.current_intensity as f32 / 100.0) as f32;
 		}
 	};
@@ -283,11 +285,10 @@ fn update(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 	{
-		let hue2 = f2(s)(r.y(), r.x(), t(s));
-		// let hue = f(r.y(), r.x(), t(s));
+		let hue = f3(s)(r.y(), r.x(), t());
 
 		draw.rect().xy(r.xy()).wh(r.wh())
-			.hsl(hue2, 1.0, 0.5);
+			.hsl(hue, 1.0, 0.5);
 	}
 
 	draw.to_frame(app, &frame).unwrap();
