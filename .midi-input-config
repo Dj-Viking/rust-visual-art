@@ -7,3 +7,13 @@ ACTIVE_CONTROLLER=XONE
 INTENSITY_CHANNEL=16
 # fader_2
 TIME_DIALATION_CHANNEL=17
+# fader_3
+# rename_me=18
+# fader_4
+# rename_me=19
+# A_button
+RESET_CHANNEL=36
+# M_button
+SPIRAL_CHANNEL=24
+# N_button
+V2_CHANNEL=25

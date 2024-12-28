@@ -2,6 +2,8 @@ use portmidi as pm;
 use nannou::prelude::*;
 use std::time::Duration;
 use std::thread;
+use std::collections::HashMap;
+
 
 static mut TIME_NOW: f32 = 0.0;
 const TIME_DIVISOR: f32 = 1000000000.0;
@@ -10,17 +12,39 @@ const TIME_DIVISOR: f32 = 1000000000.0;
 struct MidiState {
 	current_channel: u8,
 	current_intensity: u8,
+
 	intensity_channel: u8,
 	time_dialation_channel: u8,
-	timeout: Duration 
+
+	reset_channel: u8,
+	is_reset: bool,
+
+	v2_channel: u8,
+	v2_on: bool,
+
+	spiral_channel: u8,
+	spiral_on: bool,
+
+	timeout: Duration,
 }
 
 const fn new_midi_state() -> MidiState {
 	MidiState {
 		current_channel: 0,
 		current_intensity: 0,
+
 		time_dialation_channel: 0,
 		intensity_channel: 0,
+
+		reset_channel: 0,
+		is_reset: false,
+
+		v2_channel: 0,
+		v2_on: false,
+
+		spiral_channel: 0,
+		spiral_on: true,
+
 		timeout: Duration::from_millis(10),
 	}
 }
@@ -31,6 +55,7 @@ struct State {
 	finx:  usize,
 	reset: bool,
 	funcs: Vec<fn(f32, f32, f32) -> f32>,
+	funcmap: HashMap<u8, fn(f32, f32, f32) -> f32>
 }
 
 // TODO: figure out how to dynamically get the controller I want to use
@@ -58,10 +83,30 @@ fn read_midi_input_config() -> () {
 					.split('=')
 					.collect::<Vec<&str>>()[1]
 					.parse::<u8>().unwrap();
+				MS.reset_channel = text[i + 3]
+					.split('=')
+					.collect::<Vec<&str>>()[1]
+					.parse::<u8>().unwrap();
+				MS.spiral_channel = text[i + 4]
+					.split('=')
+					.collect::<Vec<&str>>()[1]
+					.parse::<u8>().unwrap();
+				MS.v2_channel = text[i + 5]
+					.split('=')
+					.collect::<Vec<&str>>()[1]
+					.parse::<u8>().unwrap();
 			}
 		}
 	}
 }
+
+type EffectFn = fn(f32, f32, f32) -> f32;
+
+const spiral: EffectFn = |y: f32, x: f32, t: f32| y * t * x;
+
+const v2: EffectFn = |y: f32, x: f32, t: f32| {
+	 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05)
+};
 
 fn main() {
 
@@ -87,19 +132,25 @@ fn main() {
 			}
 		});
 
-		let spiral = |y: f32, x: f32, t: f32| y * t * x;
-		let v2 = |y: f32, x: f32, t: f32| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05);
 
 		a.new_window()
 			.view(update)
 			.key_pressed(key_pressed)
 			.key_released(key_released)
 			.build().unwrap(); 
+	
+		unsafe {
+			let hm = HashMap::from([
+				(MS.spiral_channel, spiral),
+				(MS.v2_channel, v2)
+			]);
 
-		State {
-			finx: 0,
-			reset: false,
-			funcs: vec![spiral, v2],
+			State {
+				finx: 0,
+				reset: false,
+				funcs: vec![spiral, v2],
+				funcmap: hm
+			}
 		}
 	};
 
@@ -124,8 +175,36 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 	unsafe {
 		MS.current_channel = m.channel;
 
-		if listen_midi_channel(m.channel, MS.intensity_channel) {
+		if listen_midi_channel(
+			m.channel, MS.intensity_channel) 
+		{
 			MS.current_intensity = m.intensity;
+		}
+
+		if listen_midi_channel(
+			m.channel, MS.reset_channel) 
+		{
+			if m.intensity == 127 {
+				MS.is_reset = true;
+			} else {
+				MS.is_reset = false;
+			}
+		}
+		if listen_midi_channel(
+			m.channel, MS.spiral_channel) 
+		{
+			if m.intensity == 127 {
+				MS.spiral_on = true;
+				MS.v2_on = false;
+			}
+		}
+		if listen_midi_channel(
+			m.channel, MS.v2_channel) 
+		{
+			if m.intensity == 127 {
+				MS.v2_on = true;
+				MS.spiral_on = false;
+			} 
 		}
 
 	}
@@ -169,12 +248,24 @@ fn update(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 
-	let f = s.funcs[s.finx];
+	let f2 = |s: &State| {
 
+		let mut f: EffectFn = spiral;
+		unsafe {
+			if MS.spiral_on {
+				f = s.funcmap[&MS.spiral_channel];
+			} else if MS.v2_on {
+				f = s.funcmap[&MS.v2_channel];
+			}
+		}	
+		f
+	};
+	f2(s);
+	let f = s.funcs[s.finx]; 
 	let t = |s: &State| {
 		unsafe {
 			TIME_NOW += app.duration.since_prev_update.as_secs_f32();
-			if s.reset {
+			if MS.is_reset {
 				TIME_NOW = 0.0; 
 			}
 
@@ -189,10 +280,11 @@ fn update(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 	{
-		let hue = f(r.y(), r.x(), t(s));
+		let hue2 = f2(s)(r.y(), r.x(), t(s));
+		// let hue = f(r.y(), r.x(), t(s));
 
 		draw.rect().xy(r.xy()).wh(r.wh())
-			.hsl(hue, 1.0, 0.5);
+			.hsl(hue2, 1.0, 0.5);
 	}
 
 	draw.to_frame(app, &frame).unwrap();
