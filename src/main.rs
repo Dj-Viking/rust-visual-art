@@ -51,11 +51,13 @@ const fn new_midi_state() -> MidiState {
 
 static mut MS: MidiState = new_midi_state();
 
+type EffectFn = fn(f32, f32, f32) -> f32;
+
 struct State {
 	finx:  usize,
 	reset: bool,
-	funcs: Vec<fn(f32, f32, f32) -> f32>,
-	funcmap: HashMap<u8, fn(f32, f32, f32) -> f32>
+	funcs: Vec<EffectFn>,
+	funcmap: HashMap<u8, EffectFn>
 }
 
 // TODO: figure out how to dynamically get the controller I want to use
@@ -101,11 +103,10 @@ fn read_midi_input_config() -> () {
 	}
 }
 
-type EffectFn = fn(f32, f32, f32) -> f32;
 
-const spiral: EffectFn = |y: f32, x: f32, t: f32| y * t * x;
+const SPIRAL_FN: EffectFn = |y, x, t| y * t * x;
 
-const v2: EffectFn = |y: f32, x: f32, t: f32| {
+const V2_FN: EffectFn = |y, x, t| {
 	 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05)
 };
 
@@ -142,14 +143,14 @@ fn main() {
 	
 		unsafe {
 			let hm = HashMap::from([
-				(MS.spiral_channel, spiral),
-				(MS.v2_channel, v2)
+				(MS.spiral_channel, SPIRAL_FN),
+				(MS.v2_channel, V2_FN)
 			]);
 
 			State {
 				finx: 0,
 				reset: false,
-				funcs: vec![spiral, v2],
+				funcs: vec![SPIRAL_FN, V2_FN],
 				funcmap: hm
 			}
 		}
@@ -251,7 +252,7 @@ fn update(app: &App, s: &State, frame: Frame) {
 
 	let f2 = |s: &State| {
 
-		let mut f: EffectFn = spiral;
+		let mut f: EffectFn = SPIRAL_FN;
 		unsafe {
 			if MS.spiral_on {
 				f = s.funcmap[&MS.spiral_channel];
@@ -261,8 +262,9 @@ fn update(app: &App, s: &State, frame: Frame) {
 		}	
 		f
 	};
-	f2(s);
+
 	let f = s.funcs[s.finx]; 
+
 	let t = |s: &State| {
 		unsafe {
 			TIME_NOW += app.duration.since_prev_update.as_secs_f32();
