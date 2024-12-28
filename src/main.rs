@@ -64,35 +64,35 @@ struct State {
 // for now only mapped up to XONE controller
 // the format is hard coded for now
 fn read_midi_input_config() -> () {
-	let text = std::fs::read_to_string(".midi-input-config").unwrap()
+	let parts = std::fs::read_to_string(".midi-input-config").unwrap()
 		.split('\n')
 		.filter(|l| !l.is_empty() && !l.contains("#"))
 		.map(|l| l.to_string())
 		.collect::<Vec<String>>();
 
-	for i in 0..text.len() {
-		println!("{}", text[i]);
+	for i in 0..parts.len() {
+		println!("{}", parts[i]);
 		// hard coded known format only 
 		// two entries below the XONE label in the config file for now
-		if text[i].contains("[XONE]") {
+		if parts[i].contains("[XONE]") {
 			unsafe {
-				MS.intensity_channel = text[i + 1]
+				MS.intensity_channel = parts[i + 1]
 					.split('=')
 					.collect::<Vec<&str>>()[1]
 					.parse::<u8>().unwrap();
-				MS.time_dialation_channel = text[i + 2]
+				MS.time_dialation_channel = parts[i + 2]
 					.split('=')
 					.collect::<Vec<&str>>()[1]
 					.parse::<u8>().unwrap();
-				MS.reset_channel = text[i + 3]
+				MS.reset_channel = parts[i + 3]
 					.split('=')
 					.collect::<Vec<&str>>()[1]
 					.parse::<u8>().unwrap();
-				MS.spiral_channel = text[i + 4]
+				MS.spiral_channel = parts[i + 4]
 					.split('=')
 					.collect::<Vec<&str>>()[1]
 					.parse::<u8>().unwrap();
-				MS.v2_channel = text[i + 5]
+				MS.v2_channel = parts[i + 5]
 					.split('=')
 					.collect::<Vec<&str>>()[1]
 					.parse::<u8>().unwrap();
