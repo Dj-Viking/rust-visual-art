@@ -185,13 +185,13 @@ impl MyMidiMessage {
 fn handle_midi_msg(m: MyMidiMessage) -> () {
 	unsafe {
 		MS.current_channel = m.channel;
-
+		
+		// matching here?
 		if listen_midi_channel(
 			m.channel, MS.intensity_channel) 
 		{
 			MS.current_intensity = m.intensity;
 		}
-
 		if listen_midi_channel(
 			m.channel, MS.reset_channel) 
 		{
@@ -215,7 +215,6 @@ fn handle_midi_msg(m: MyMidiMessage) -> () {
 				MS.func_on = ActiveFunc::V2;
 			} 
 		}
-
 	}
 }
 
