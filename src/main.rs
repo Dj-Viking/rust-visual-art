@@ -263,9 +263,9 @@ fn update(app: &App, s: &State, frame: Frame) {
 		f
 	};
 
-	let f = s.funcs[s.finx]; 
+	//let f = s.funcs[s.finx]; 
 
-	let t = |s: &State| {
+	let t = |_: &State| {
 		unsafe {
 			TIME_NOW += app.duration.since_prev_update.as_secs_f32();
 			if MS.is_reset {
