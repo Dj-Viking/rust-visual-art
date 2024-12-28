@@ -24,7 +24,6 @@ enum ActiveFunc {
 
 #[derive(Debug)]
 struct MidiState {
-	current_channel: u8,
 	current_intensity: u8,
 
 	intensity_channel: u8,
@@ -44,7 +43,6 @@ struct MidiState {
 
 const fn new_midi_state() -> MidiState {
 	MidiState {
-		current_channel: 0,
 		current_intensity: 0,
 
 		time_dialation_channel: 0,
@@ -184,7 +182,6 @@ impl MyMidiMessage {
 
 fn handle_midi_msg(m: MyMidiMessage) -> () {
 	unsafe {
-		MS.current_channel = m.channel;
 		
 		// matching here?
 		if listen_midi_channel(
