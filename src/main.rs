@@ -59,6 +59,7 @@ struct State {
 }
 
 // TODO: figure out how to dynamically get the controller I want to use
+// this could be better
 // from the config file and all it's mappings
 // for now only mapped up to XONE controller
 // the format is hard coded for now
@@ -69,7 +70,7 @@ fn read_midi_input_config() -> () {
 		.map(|l| l.to_string())
 		.collect::<Vec<String>>();
 
-	for i in 0..text.clone().into_iter().len() {
+	for i in 0..text.len() {
 		println!("{}", text[i]);
 		// hard coded known format only 
 		// two entries below the XONE label in the config file for now
