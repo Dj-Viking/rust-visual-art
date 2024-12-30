@@ -19,13 +19,16 @@ struct State {
 
 #[derive(Default)]
 struct MutState {
+	is_backwards:      bool,
+	is_reset:          bool,
 	current_intensity: u8,
-	func:        ActiveFunc,
+	func:              ActiveFunc,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Config {
 	device_name: Box<str>,
+	backwards_c: u8,
 	v2_c:        u8,
 	spiral_c:    u8,
 	intensity_c: u8,
@@ -88,6 +91,17 @@ fn main() {
 						ms.func = ActiveFunc::V2;
 					}
 
+					if channel == CONFIG.reset_c && intensity > 0 {
+						ms.is_reset = true;
+					} else { 
+						ms.is_reset = false; 
+					}
+
+					// toggle
+					if channel == CONFIG.backwards_c && intensity > 0 {
+						ms.is_backwards = !ms.is_backwards;
+					}
+
 					unsafe { BACKOFF = 0; }
 					continue;
 				}
@@ -131,17 +145,18 @@ fn update(app: &App, s: &State, frame: Frame) {
 
 	const TIME_DIVISOR: f32 = 1000000000.0;
 	static mut TIME: f32 = 0.0;
-	static mut IS_BACKWARDS: bool = false;
 
 	let t = || unsafe {
-		let ms = s.ms.lock().unwrap();
-		if IS_BACKWARDS { TIME -= app.duration.since_prev_update.as_secs_f32(); } 
+		let mut ms = s.ms.lock().unwrap();
+		if ms.is_backwards { TIME -= app.duration.since_prev_update.as_secs_f32(); } 
 		else { TIME += app.duration.since_prev_update.as_secs_f32(); }
 
 		const THRESHOLD: f32 = 400000.0;
 		if TIME >= THRESHOLD || TIME <= -THRESHOLD {
-			IS_BACKWARDS = !IS_BACKWARDS;
+			ms.is_backwards = !ms.is_backwards;
 		}
+
+		if ms.is_reset { TIME = 0.0; } 
 
 		TIME / TIME_DIVISOR + ms.current_intensity as f32 / 100.0
 	};
