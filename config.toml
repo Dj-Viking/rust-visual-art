@@ -1,0 +1,5 @@
+device_name = "Arturia KeyLab Essential 61 MID"
+v2_c = 40
+spiral_c = 41
+intensity_c = 73
+reset_c = 0

@@ -1,252 +1,120 @@
 use portmidi as pm;
 use nannou::prelude::*;
-use std::time::Duration;
 use std::thread;
-use std::collections::HashMap;
 
-static mut TIME_NOW: f32 = 0.0;
-const TIME_DIVISOR: f32 = 1000000000.0;
+use std::sync::{LazyLock, Arc, Mutex};
 
-const SPIRAL_FN: EffectFn = |y, x, t| y * x * t;
-
-const V2_FN: EffectFn = |y, x, t| {
-	 32.0 / 
-		(t / x) + y / 
-		(x / y - 1.0 / t) +
-		t * (y * 0.05)
-};
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(u8)]
 enum ActiveFunc {
-	Spiral,
-	V2
+	#[default]
+	Spiral = 0,
+	V2     = 1,
 }
-
-#[derive(Debug)]
-struct MidiState {
-	current_intensity: u8,
-
-	intensity_channel: u8,
-	time_dialation_channel: u8,
-
-	func_on: ActiveFunc,
-
-	reset_channel: u8,
-	is_reset: bool,
-
-	v2_channel: u8,
-
-	spiral_channel: u8,
-
-	timeout: Duration,
-}
-
-const fn new_midi_state() -> MidiState {
-	MidiState {
-		current_intensity: 0,
-
-		time_dialation_channel: 0,
-		intensity_channel: 0,
-
-		func_on: ActiveFunc::Spiral,
-
-		reset_channel: 0,
-		is_reset: false,
-
-		v2_channel: 0,
-
-		spiral_channel: 0,
-
-		timeout: Duration::from_millis(10),
-	}
-}
-
-static mut MS: MidiState = new_midi_state();
-
-type EffectFn = fn(f32, f32, f32) -> f32;
-
 
 struct State {
-	finx:  usize,
-	reset: bool,
-	funcs: Vec<EffectFn>,
-	funcmap: HashMap<u8, EffectFn>
+	funcs: &'static [fn(f32, f32, f32) -> f32],
+	ms:    Arc<Mutex<MutState>>,
 }
 
-// TODO: figure out how to dynamically get the controller I want to use
-// this could be better
-// from the config file and all it's mappings
-// for now only mapped up to XONE controller
-// the format is hard coded for now
-fn read_midi_input_config() -> () {
-	let parts = std::fs::read_to_string(".midi-input-config").unwrap()
-		.split('\n')
-		.filter(|l| !l.is_empty() && !l.contains("#"))
-		.map(|l| l.to_string())
-		.collect::<Vec<String>>();
-
-	for i in 0..parts.len() {
-		println!("{}", parts[i]);
-		// hard coded known format only 
-		// two entries below the XONE label in the config file for now
-		if parts[i].contains("[XONE]") {
-			unsafe {
-				MS.intensity_channel = parts[i + 1]
-					.split('=')
-					.collect::<Vec<&str>>()[1]
-					.parse::<u8>().unwrap();
-				MS.time_dialation_channel = parts[i + 2]
-					.split('=')
-					.collect::<Vec<&str>>()[1]
-					.parse::<u8>().unwrap();
-				MS.reset_channel = parts[i + 3]
-					.split('=')
-					.collect::<Vec<&str>>()[1]
-					.parse::<u8>().unwrap();
-				MS.spiral_channel = parts[i + 4]
-					.split('=')
-					.collect::<Vec<&str>>()[1]
-					.parse::<u8>().unwrap();
-				MS.v2_channel = parts[i + 5]
-					.split('=')
-					.collect::<Vec<&str>>()[1]
-					.parse::<u8>().unwrap();
-			}
-		}
-	}
+#[derive(Default)]
+struct MutState {
+	current_intensity: u8,
+	func:        ActiveFunc,
 }
 
+#[derive(serde::Deserialize, serde::Serialize)]
+struct Config {
+	device_name: Box<str>,
+	v2_c:        u8,
+	spiral_c:    u8,
+	intensity_c: u8,
+	reset_c:     u8,
+}
+
+const CONF_FILE: &str = "config.toml";
+static CONFIG: LazyLock<Config> = LazyLock::new(||
+	toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
+		eprintln!("Error reading config file: {e}");
+		std::process::exit(1);
+	}));
 
 fn main() {
+	if std::env::args().skip(1).any(|a| a == "list") {
+		let pm_ctx = pm::PortMidi::new().unwrap();
+		let devices = pm_ctx.devices().unwrap();
+		devices.iter().for_each(|d| println!("{} {:?} {:?}", d.id(), d.name(), d.direction()));
+		std::process::exit(0);
+	}
+
+	let _ = &*CONFIG; // make sure config is initialized beforehand
 
 	let init = |a: &App| { 
+		let ms = Arc::new(Mutex::new(MutState::default()));
 
 		let pm_ctx = pm::PortMidi::new().unwrap();
-		let xone_id = get_xonek2_input_id(&pm_ctx);
-		let info = pm_ctx.device(xone_id).unwrap();
+		let devices = pm_ctx.devices().unwrap();
 
-		// map the channels to which part of the effect to control
-		read_midi_input_config();
+		let dev = devices.into_iter().find(|d| 
+			d.name() == &*CONFIG.device_name && d.direction() == pm::Direction::Input)
+			.unwrap_or_else(|| {
+				eprintln!("No device found with name: {}", &*CONFIG.device_name);
+				std::process::exit(1);
+			});
 
+		let ms_ = ms.clone();
 		thread::spawn(move || {
-			let in_port = pm_ctx.input_port(info, 1024)
-				.unwrap();
-			while let Ok(_) = in_port.poll() {
+			let in_port = pm_ctx.input_port(dev, 1024).unwrap();
+
+			while in_port.poll().is_ok() {
+				static mut BACKOFF: u8 = 0;
+
 				if let Ok(Some(m)) = in_port.read_n(1024) {
-					handle_midi_msg(MyMidiMessage::new(m[0]));
+					println!("{:?}", m[0]);
+					let channel = m[0].message.data1;
+					let intensity = m[0].message.data2;
+
+					let mut ms = ms_.lock().unwrap();
+
+					if channel == CONFIG.intensity_c {
+						ms.current_intensity = intensity;
+					}
+
+					if channel == CONFIG.spiral_c && intensity > 0 {
+						ms.func = ActiveFunc::Spiral;
+					}
+
+					if channel == CONFIG.v2_c && intensity > 0 {
+						ms.func = ActiveFunc::V2;
+					}
+
+					unsafe { BACKOFF = 0; }
+					continue;
 				}
-			}
-			unsafe {
-				thread::sleep(MS.timeout);
+
+				std::hint::spin_loop();
+				std::thread::sleep(std::time::Duration::from_millis(unsafe { BACKOFF * 10 } as u64));
+				unsafe { BACKOFF += 1; }
+				unsafe { BACKOFF %= 10; }
 			}
 		});
 
-
 		a.new_window()
 			.view(update)
-			.key_pressed(key_pressed)
-			.key_released(key_released)
 			.build().unwrap(); 
-	
-		unsafe {
-			let hm = HashMap::from([
-				(MS.spiral_channel, SPIRAL_FN),
-				(MS.v2_channel, V2_FN)
-			]);
 
-			State {
-				finx: 0,
-				reset: false,
-				funcs: vec![SPIRAL_FN, V2_FN],
-				funcmap: hm
-			}
+		State {
+			ms,
+			funcs: &[
+				|y, x, t| y * x * t, // spiral
+				|y, x, t| 32.0 / (t / x) + y / // v2
+					(x / y - 1.0 / t) +
+					t * (y * 0.05),
+			],
 		}
 	};
 
 	nannou::app(init).run();
-}
-
-#[derive(Debug)]
-struct MyMidiMessage {
-	channel: u8,
-	intensity: u8,
-}
-impl MyMidiMessage {
-	fn new(m: pm::types::MidiEvent) -> Self {
-		Self {
-			channel: m.message.data1,
-			intensity: m.message.data2,
-		}
-	}
-}
-
-fn handle_midi_msg(m: MyMidiMessage) -> () {
-	unsafe {
-		
-		// matching here?
-		if listen_midi_channel(
-			m.channel, MS.intensity_channel) 
-		{
-			MS.current_intensity = m.intensity;
-		}
-		if listen_midi_channel(
-			m.channel, MS.reset_channel) 
-		{
-			if m.intensity == 127 {
-				MS.is_reset = true;
-			} else {
-				MS.is_reset = false;
-			}
-		}
-		if listen_midi_channel(
-			m.channel, MS.spiral_channel) 
-		{
-			if m.intensity == 127 {
-				MS.func_on = ActiveFunc::Spiral;
-			}
-		}
-		if listen_midi_channel(
-			m.channel, MS.v2_channel) 
-		{
-			if m.intensity == 127 {
-				MS.func_on = ActiveFunc::V2;
-			} 
-		}
-	}
-}
-
-fn get_xonek2_input_id(pm: &pm::PortMidi) -> i32 {
-	let mut ret: i32 = 0;
-
-	for d in pm.devices().unwrap()
-	{
-		if d.name().contains("XONE") 
-			&& d.direction() == pm::Direction::Input
-		{ ret = d.id(); break; }
-	}
-
-	ret
-}
-
-fn key_released(_: &App, s: &mut State, key: Key) {
-	match key {
-		Key::Tab => s.reset = false,
-		_ => (),
-	}
-}
-fn key_pressed(_: &App, s: &mut State, key: Key) {
-	match key {
-		Key::Space => s.finx = (s.finx + 1) % s.funcs.len(),
-		Key::Tab => s.reset = true,
-		_ => (),
-	}
-}
-
-fn listen_midi_channel(in_channel: u8, channel: u8) -> bool {
-	if in_channel == channel {
-		return true;
-	}
-	return false;
 }
 
 fn update(app: &App, s: &State, frame: Frame) {
@@ -254,24 +122,28 @@ fn update(app: &App, s: &State, frame: Frame) {
 	draw.background().color(BLACK);
 
 	let f3 = |s: &State| {
-		unsafe {
-			match &MS.func_on {
-				ActiveFunc::Spiral => s.funcmap[&MS.spiral_channel],
-				ActiveFunc::V2 => s.funcmap[&MS.v2_channel],
-				// default to spiral if haven't handled that func_on value yet
-				_ => s.funcs[0],
-			}
+		let ms = s.ms.lock().unwrap();
+		match &ms.func {
+			ActiveFunc::Spiral => s.funcs[ms.func as u8 as usize],
+			ActiveFunc::V2     => s.funcs[ms.func as u8 as usize],
 		}
 	};
 
-	let t = || {
-		unsafe {
-			TIME_NOW += app.duration.since_prev_update.as_secs_f32();
-			if MS.is_reset {
-				TIME_NOW = 0.0; 
-			}
-			return TIME_NOW / TIME_DIVISOR + (MS.current_intensity as f32 / 100.0) as f32;
+	const TIME_DIVISOR: f32 = 1000000000.0;
+	static mut TIME: f32 = 0.0;
+	static mut IS_BACKWARDS: bool = false;
+
+	let t = || unsafe {
+		let ms = s.ms.lock().unwrap();
+		if IS_BACKWARDS { TIME -= app.duration.since_prev_update.as_secs_f32(); } 
+		else { TIME += app.duration.since_prev_update.as_secs_f32(); }
+
+		const THRESHOLD: f32 = 400000.0;
+		if TIME >= THRESHOLD || TIME <= -THRESHOLD {
+			IS_BACKWARDS = !IS_BACKWARDS;
 		}
+
+		TIME / TIME_DIVISOR + ms.current_intensity as f32 / 100.0
 	};
 
 	for r in app.window_rect().subdivisions_iter()
@@ -279,8 +151,7 @@ fn update(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
-		.flat_map(|r| r.subdivisions_iter())
-	{
+		.flat_map(|r| r.subdivisions_iter()) {
 		let hue = f3(s)(r.y(), r.x(), t());
 
 		draw.rect().xy(r.xy()).wh(r.wh())
