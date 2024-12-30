@@ -83,21 +83,24 @@ fn main() {
 						ms.current_intensity = intensity;
 					}
 
+					// latch behavior
 					if channel == CONFIG.spiral_c && intensity > 0 {
 						ms.func = ActiveFunc::Spiral;
 					}
 
+					// latch behavior
 					if channel == CONFIG.v2_c && intensity > 0 {
 						ms.func = ActiveFunc::V2;
 					}
 
+					// momentary switch behavior
 					if channel == CONFIG.reset_c && intensity > 0 {
 						ms.is_reset = true;
 					} else { 
 						ms.is_reset = false; 
 					}
 
-					// toggle
+					// toggle behavior
 					if channel == CONFIG.backwards_c && intensity > 0 {
 						ms.is_backwards = !ms.is_backwards;
 					}
