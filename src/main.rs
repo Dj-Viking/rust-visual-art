@@ -30,13 +30,13 @@ struct MutState {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Config {
 	device_name: Box<str>,
-	backwards_c: 	  u8,
-	v2_c:        	  u8,
-	waves_c:     	  u8,
-	spiral_c:    	  u8,
-	intensity_c: 	  u8,
+	backwards_c:      u8,
+	v2_c:             u8,
+	waves_c:          u8,
+	spiral_c:         u8,
+	intensity_c:      u8,
 	time_dialation_c: u8,
-	reset_c:		  u8,
+	reset_c:          u8,
 }
 
 const CONF_FILE: &str = "config.toml";
@@ -47,6 +47,9 @@ static CONFIG: LazyLock<Config> = LazyLock::new(||
 	}));
 
 fn main() {
+	
+	// get user input to choose available controllers that may be configured by the user already
+	// and use those mappings
 	if std::env::args().skip(1).any(|a| a == "list") {
 		let pm_ctx = pm::PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
