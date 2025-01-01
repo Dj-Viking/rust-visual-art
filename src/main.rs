@@ -4,12 +4,13 @@ use std::thread;
 
 use std::sync::{LazyLock, Arc, Mutex};
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, PartialEq, Copy, Default)]
 #[repr(u8)]
 enum ActiveFunc {
 	#[default]
 	Spiral = 0,
 	V2     = 1,
+	Waves  = 2,
 }
 
 struct State {
@@ -22,17 +23,20 @@ struct MutState {
 	is_backwards:      bool,
 	is_reset:          bool,
 	current_intensity: u8,
+	time_dialiation:   u8,
 	func:              ActiveFunc,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Config {
 	device_name: Box<str>,
-	backwards_c: u8,
-	v2_c:        u8,
-	spiral_c:    u8,
-	intensity_c: u8,
-	reset_c:     u8,
+	backwards_c: 	  u8,
+	v2_c:        	  u8,
+	waves_c:     	  u8,
+	spiral_c:    	  u8,
+	intensity_c: 	  u8,
+	time_dialation_c: u8,
+	reset_c:		  u8,
 }
 
 const CONF_FILE: &str = "config.toml";
@@ -72,6 +76,7 @@ fn main() {
 			while in_port.poll().is_ok() {
 				static mut BACKOFF: u8 = 0;
 
+				// handle midi message
 				if let Ok(Some(m)) = in_port.read_n(1024) {
 					println!("{:?}", m[0]);
 					let channel = m[0].message.data1;
@@ -79,8 +84,14 @@ fn main() {
 
 					let mut ms = ms_.lock().unwrap();
 
+					// continuous value 0-127
 					if channel == CONFIG.intensity_c {
 						ms.current_intensity = intensity;
+					}
+
+					// continuous value 0-127
+					if channel == CONFIG.time_dialation_c {
+						ms.time_dialiation = intensity;
 					}
 
 					// latch behavior
@@ -91,6 +102,11 @@ fn main() {
 					// latch behavior
 					if channel == CONFIG.v2_c && intensity > 0 {
 						ms.func = ActiveFunc::V2;
+					}
+
+					// latch behavior
+					if channel == CONFIG.waves_c && intensity > 0 {
+						ms.func = ActiveFunc::Waves;
 					}
 
 					// momentary switch behavior
@@ -127,6 +143,7 @@ fn main() {
 				|y, x, t| 32.0 / (t / x) + y / // v2
 					(x / y - 1.0 / t) +
 					t * (y * 0.05),
+				|y, x, t| x / y * t
 			],
 		}
 	};
@@ -143,25 +160,42 @@ fn update(app: &App, s: &State, frame: Frame) {
 		match &ms.func {
 			ActiveFunc::Spiral => s.funcs[ms.func as u8 as usize],
 			ActiveFunc::V2     => s.funcs[ms.func as u8 as usize],
+			ActiveFunc::Waves     => s.funcs[ms.func as u8 as usize],
 		}
 	};
 
 	const TIME_DIVISOR: f32 = 1000000000.0;
+	const TIME_DIVISOR2: f32 = 1000.0;
 	static mut TIME: f32 = 0.0;
 
 	let t = || unsafe {
 		let mut ms = s.ms.lock().unwrap();
-		if ms.is_backwards { TIME -= app.duration.since_prev_update.as_secs_f32(); } 
-		else { TIME += app.duration.since_prev_update.as_secs_f32(); }
+		if ms.is_backwards { 
+			TIME -= 
+				app.duration.since_prev_update.as_secs_f32()
+		} 
+		else { 
+			TIME += 
+				app.duration.since_prev_update.as_secs_f32()
+		}
 
-		const THRESHOLD: f32 = 400000.0;
+		const THRESHOLD: f32 = 1000000000.0;
 		if TIME >= THRESHOLD || TIME <= -THRESHOLD {
 			ms.is_backwards = !ms.is_backwards;
 		}
 
 		if ms.is_reset { TIME = 0.0; } 
-
-		TIME / TIME_DIVISOR + ms.current_intensity as f32 / 100.0
+		
+		if &ms.func == &ActiveFunc::Waves {
+			TIME / 
+				(TIME_DIVISOR2 + (100000.0 * ms.time_dialiation as f32)) 
+				+ ms.current_intensity as f32 / 100.0
+				
+		} else {
+			TIME / 
+				(TIME_DIVISOR + (100000.0 * ms.time_dialiation as f32)) 
+				+ ms.current_intensity as f32 / 100.0
+		}
 	};
 
 	for r in app.window_rect().subdivisions_iter()

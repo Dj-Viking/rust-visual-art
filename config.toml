@@ -6,9 +6,14 @@ v2_c = 25
 # M_button
 spiral_c = 24
 
+# O_button
+waves_c = 26
+
 # fader_1
 intensity_c = 16
 
+#fader_4
+time_dialation_c = 19
 # A_button
 reset_c = 36
 
