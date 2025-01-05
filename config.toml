@@ -1,30 +1,17 @@
-device_name = "XONE:K2 "
+["XONE:K2 "]
+v2             = 25
+spiral         = 24
+waves          = 26
+intensity      = 16
+time_dialation = 19
+reset          = 36 
+backwards      = 37
 
-# N_button
-v2_c = 25
-
-# M_button
-spiral_c = 24
-
-# O_button
-waves_c = 26
-
-# fader_1
-intensity_c = 16
-
-#fader_4
-time_dialation_c = 19
-
-# A_button
-reset_c = 36
-
-# B_button
-backwards_c = 37
-
-#################################################
-
-# device_name = "Arturia KeyLab Essential 61 MID"
-# v2_c = 40
-# spiral_c = 41
-# intensity_c = 73
-# reset_c = 0
+["Arturia KeyLab Essential 61 MID"]
+v2             = 40
+spiral         = 41
+intensity      = 73
+reset          = 0
+waves          = 26
+time_dialation = 19
+backwards      = 0
