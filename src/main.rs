@@ -1,8 +1,8 @@
 use portmidi as pm;
 use nannou::prelude::*;
-use std::thread;
 
-use std::sync::{LazyLock, Arc, Mutex};
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Copy, Default)]
 #[repr(u8)]
@@ -28,28 +28,19 @@ struct MutState {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct Config {
-	device_name: Box<str>,
-	backwards_c:      u8,
-	v2_c:             u8,
-	waves_c:          u8,
-	spiral_c:         u8,
-	intensity_c:      u8,
-	time_dialation_c: u8,
-	reset_c:          u8,
+struct DConfig {
+	backwards:      u8,
+	v2:             u8,
+	waves:          u8,
+	spiral:         u8,
+	intensity:      u8,
+	time_dialation: u8,
+	reset:          u8,
 }
 
 const CONF_FILE: &str = "config.toml";
-static CONFIG: LazyLock<Config> = LazyLock::new(||
-	toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
-		eprintln!("Error reading config file: {e}");
-		std::process::exit(1);
-	}));
 
 fn main() {
-	
-	// get user input to choose available controllers that may be configured by the user already
-	// and use those mappings
 	if std::env::args().skip(1).any(|a| a == "list") {
 		let pm_ctx = pm::PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
@@ -57,81 +48,77 @@ fn main() {
 		std::process::exit(0);
 	}
 
-	let _ = &*CONFIG; // make sure config is initialized beforehand
-
 	let init = |a: &App| { 
 		let ms = Arc::new(Mutex::new(MutState::default()));
 
 		let pm_ctx = pm::PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
 
-		let dev = devices.into_iter().find(|d| 
-			d.name() == &*CONFIG.device_name && d.direction() == pm::Direction::Input)
-			.unwrap_or_else(|| {
-				eprintln!("No device found with name: {}", &*CONFIG.device_name);
-				std::process::exit(1);
-			});
+		let (cfg, dev) = {
+			let mut config: HashMap<String, DConfig> = 
+				toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
+					eprintln!("Error reading config file: {e}");
+					std::process::exit(1);
+				});
+
+			let dev = devices.into_iter()
+				.find(|d| d.direction() == pm::Direction::Input && config.keys().any(|n| n == d.name()))
+				.unwrap_or_else(|| {
+					eprintln!("No device defined in config found");
+					std::process::exit(1);
+				});
+
+			(unsafe { config.remove(dev.name()).unwrap_unchecked() }, dev)
+		};
 
 		let ms_ = ms.clone();
-		thread::spawn(move || {
-			let in_port = pm_ctx.input_port(dev, 1024).unwrap();
+		std::thread::spawn(move || {
+			let mut in_port = pm_ctx.input_port(dev, 256).unwrap();
 
-			while in_port.poll().is_ok() {
+			loop {
 				static mut BACKOFF: u8 = 0;
 
-				// handle midi message
-				if let Ok(Some(m)) = in_port.read_n(1024) {
-					println!("{:?}", m[0]);
-					let channel = m[0].message.data1;
-					let intensity = m[0].message.data2;
-
-					let mut ms = ms_.lock().unwrap();
-
-					// continuous value 0-127
-					if channel == CONFIG.intensity_c {
-						ms.current_intensity = intensity;
-					}
-
-					// continuous value 0-127
-					if channel == CONFIG.time_dialation_c {
-						ms.time_dialiation = intensity;
-					}
-
-					// latch behavior
-					if channel == CONFIG.spiral_c && intensity > 0 {
-						ms.func = ActiveFunc::Spiral;
-					}
-
-					// latch behavior
-					if channel == CONFIG.v2_c && intensity > 0 {
-						ms.func = ActiveFunc::V2;
-					}
-
-					// latch behavior
-					if channel == CONFIG.waves_c && intensity > 0 {
-						ms.func = ActiveFunc::Waves;
-					}
-
-					// momentary switch behavior
-					if channel == CONFIG.reset_c && intensity > 0 {
-						ms.is_reset = true;
-					} else { 
-						ms.is_reset = false; 
-					}
-
-					// toggle behavior
-					if channel == CONFIG.backwards_c && intensity > 0 {
-						ms.is_backwards = !ms.is_backwards;
-					}
-
-					unsafe { BACKOFF = 0; }
+				let let Ok(Some(m)) = in_port.read() else {
+					std::hint::spin_loop();
+					std::thread::sleep(std::time::Duration::from_millis(unsafe { BACKOFF * 10 } as u64));
+					unsafe { BACKOFF += 1; }
+					unsafe { BACKOFF %= 10; }
 					continue;
+				};
+
+				// TODO: listen flag
+				let channel   = m.message.data1;
+				let intensity = m.message.data2;
+
+				let mut ms = ms_.lock().unwrap();
+
+				if channel == cfg.intensity {
+					ms.current_intensity = intensity;
 				}
 
-				std::hint::spin_loop();
-				std::thread::sleep(std::time::Duration::from_millis(unsafe { BACKOFF * 10 } as u64));
-				unsafe { BACKOFF += 1; }
-				unsafe { BACKOFF %= 10; }
+				if channel == cfg.time_dialation {
+					ms.time_dialiation = intensity;
+				}
+
+				if channel == cfg.spiral && intensity > 0 {
+					ms.func = ActiveFunc::Spiral;
+				}
+
+				if channel == cfg.v2 && intensity > 0 {
+					ms.func = ActiveFunc::V2;
+				}
+
+				if channel == cfg.waves && intensity > 0 {
+					ms.func = ActiveFunc::Waves;
+				}
+
+				ms.is_reset = channel == cfg.reset && intensity > 0;
+
+				if channel == cfg.backwards && intensity > 0 {
+					ms.is_backwards = !ms.is_backwards;
+				}
+
+				unsafe { BACKOFF = 0; }
 			}
 		});
 
@@ -143,10 +130,8 @@ fn main() {
 			ms,
 			funcs: &[
 				|y, x, t| y * x * t, // spiral
-				|y, x, t| 32.0 / (t / x) + y / // v2
-					(x / y - 1.0 / t) +
-					t * (y * 0.05),
-				|y, x, t| x / y * t
+				|y, x, t| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
+				|y, x, t| x / y * t, // waves
 			],
 		}
 	};
@@ -163,7 +148,7 @@ fn update(app: &App, s: &State, frame: Frame) {
 		match &ms.func {
 			ActiveFunc::Spiral => s.funcs[ms.func as u8 as usize],
 			ActiveFunc::V2     => s.funcs[ms.func as u8 as usize],
-			ActiveFunc::Waves     => s.funcs[ms.func as u8 as usize],
+			ActiveFunc::Waves  => s.funcs[ms.func as u8 as usize],
 		}
 	};
 
@@ -173,13 +158,10 @@ fn update(app: &App, s: &State, frame: Frame) {
 
 	let t = || unsafe {
 		let mut ms = s.ms.lock().unwrap();
-		if ms.is_backwards { 
-			TIME -= 
-				app.duration.since_prev_update.as_secs_f32()
-		} 
-		else { 
-			TIME += 
-				app.duration.since_prev_update.as_secs_f32()
+
+		match ms.is_backwards {
+			true => TIME -= app.duration.since_prev_update.as_secs_f32(),
+			_    => TIME += app.duration.since_prev_update.as_secs_f32(),
 		}
 
 		const THRESHOLD: f32 = 1000000000.0;
@@ -189,16 +171,10 @@ fn update(app: &App, s: &State, frame: Frame) {
 
 		if ms.is_reset { TIME = 0.0; } 
 		
-		if &ms.func == &ActiveFunc::Waves {
-			TIME / 
-				(TIME_DIVISOR2 + (100000.0 * ms.time_dialiation as f32)) 
-				+ ms.current_intensity as f32 / 100.0
-				
-		} else {
-			TIME / 
-				(TIME_DIVISOR + (100000.0 * ms.time_dialiation as f32)) 
-				+ ms.current_intensity as f32 / 100.0
-		}
+		TIME /
+			if ms.func == ActiveFunc::Waves { TIME_DIVISOR2 } else { TIME_DIVISOR } 
+			+ 100000.0 * ms.time_dialiation as f32
+			+ ms.current_intensity as f32 / 100.0
 	};
 
 	for r in app.window_rect().subdivisions_iter()
