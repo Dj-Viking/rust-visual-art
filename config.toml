@@ -1,11 +1,11 @@
 ["XONE:K2 "]
-v2             = 25
-spiral         = 24
-waves          = 26
-intensity      = 16
-time_dialation = 19
-reset          = 36 
-backwards      = 37
+spiral         = 24 # M Button
+v2             = 25 # N Button
+waves          = 26 # O Button
+intensity      = 16 # fader_1
+time_dialation = 19 # fader_4
+reset          = 36 # A Button
+backwards      = 37 # B Button
 
 ["Arturia KeyLab Essential 61 MID"]
 v2             = 40

@@ -89,6 +89,8 @@ fn main() {
 
 				let channel   = m.message.data1;
 				let intensity = m.message.data2;
+				
+				println!("chan {} - intensity {}", channel, intensity);
 
 				let mut ms = ms_.lock().unwrap();
 
@@ -172,8 +174,8 @@ fn update(app: &App, s: &State, frame: Frame) {
 		if ms.is_reset { TIME = 0.0; } 
 		
 		TIME /
-			if ms.func == ActiveFunc::Waves { TIME_DIVISOR2 } else { TIME_DIVISOR } 
-			+ 100000.0 * ms.time_dialiation as f32
+			(if ms.func == ActiveFunc::Waves { TIME_DIVISOR2 } else { TIME_DIVISOR } 
+			+ 100000.0 * ms.time_dialiation as f32)
 			+ ms.current_intensity as f32 / 100.0
 	};
 
