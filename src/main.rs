@@ -144,40 +144,9 @@ fn main() {
 fn update(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
+	let mut ms = s.ms.lock().unwrap();
 
-	let f3 = |s: &State| {
-		let ms = s.ms.lock().unwrap();
-		match &ms.func {
-			ActiveFunc::Spiral => s.funcs[ms.func as u8 as usize],
-			ActiveFunc::V2     => s.funcs[ms.func as u8 as usize],
-			ActiveFunc::Waves  => s.funcs[ms.func as u8 as usize],
-		}
-	};
-
-	const TIME_DIVISOR: f32 = 1000000000.0;
-	const TIME_DIVISOR2: f32 = 1000.0;
 	static mut TIME: f32 = 0.0;
-
-	let t = || unsafe {
-		let mut ms = s.ms.lock().unwrap();
-
-		match ms.is_backwards {
-			true => TIME -= app.duration.since_prev_update.as_secs_f32(),
-			_    => TIME += app.duration.since_prev_update.as_secs_f32(),
-		}
-
-		const THRESHOLD: f32 = 1000000000.0;
-		if TIME >= THRESHOLD || TIME <= -THRESHOLD {
-			ms.is_backwards = !ms.is_backwards;
-		}
-
-		if ms.is_reset { TIME = 0.0; } 
-		
-		TIME /
-			(if ms.func == ActiveFunc::Waves { TIME_DIVISOR2 } else { TIME_DIVISOR } 
-			+ 100000.0 * ms.time_dialiation as f32)
-			+ ms.current_intensity as f32 / 100.0
-	};
 
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
@@ -185,7 +154,28 @@ fn update(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter()) {
-		let hue = f3(s)(r.y(), r.x(), t());
+		let time_divisor = match ms.func {
+			ActiveFunc::Waves => 1000.0,
+			_                 => 1000000000.0,
+		};
+
+		match ms.is_backwards {
+			true => unsafe { TIME -= app.duration.since_prev_update.as_secs_f32() },
+			_    => unsafe { TIME += app.duration.since_prev_update.as_secs_f32() },
+		}
+
+		const THRESHOLD: f32 = 1000000000.0;
+		if unsafe { TIME >= THRESHOLD || TIME <= -THRESHOLD } {
+			ms.is_backwards = !ms.is_backwards;
+		}
+
+		if ms.is_reset { unsafe { TIME = 0.0; } } 
+		
+		let t = unsafe { TIME } /
+			(time_divisor + 100000.0 * ms.time_dialiation as f32)
+			+ ms.current_intensity as f32 / 100.0;
+
+		let hue = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t);
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(hue, 1.0, 0.5);
