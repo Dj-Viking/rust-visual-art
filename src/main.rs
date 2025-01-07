@@ -11,6 +11,7 @@ enum ActiveFunc {
 	Spiral = 0,
 	V2     = 1,
 	Waves  = 2,
+	Solid  = 3,
 }
 
 struct State {
@@ -32,6 +33,7 @@ struct DConfig {
 	backwards:      u8,
 	v2:             u8,
 	waves:          u8,
+	solid:          u8,
 	spiral:         u8,
 	intensity:      u8,
 	time_dialation: u8,
@@ -114,6 +116,10 @@ fn main() {
 					ms.func = ActiveFunc::Waves;
 				}
 
+				if channel == cfg.solid && intensity > 0 {
+					ms.func = ActiveFunc::Solid;
+				}
+
 				ms.is_reset = channel == cfg.reset && intensity > 0;
 
 				if channel == cfg.backwards && intensity > 0 {
@@ -134,6 +140,7 @@ fn main() {
 				|y, x, t| y * x * t, // spiral
 				|y, x, t| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
 				|y, x, t| x / y * t, // waves
+				|y, x, t| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
 			],
 		}
 	};
@@ -156,6 +163,7 @@ fn update(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter()) {
 		let time_divisor = match ms.func {
 			ActiveFunc::Waves => 1000.0,
+			ActiveFunc::Solid => 1000.0,
 			_                 => 1000000000.0,
 		};
 
@@ -172,7 +180,7 @@ fn update(app: &App, s: &State, frame: Frame) {
 		if ms.is_reset { unsafe { TIME = 0.0; } } 
 		
 		let t = unsafe { TIME } /
-			(time_divisor + 100000.0 * ms.time_dialiation as f32)
+			(time_divisor + 100000.0 * (ms.time_dialiation as f32 / 10.0))
 			+ ms.current_intensity as f32 / 100.0;
 
 		let hue = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t);

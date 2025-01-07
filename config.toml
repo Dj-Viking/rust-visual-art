@@ -2,6 +2,7 @@
 spiral         = 24 # M Button
 v2             = 25 # N Button
 waves          = 26 # O Button
+solid          = 27 # P Button
 intensity      = 16 # fader_1
 time_dialation = 19 # fader_4
 reset          = 36 # A Button
@@ -13,5 +14,6 @@ spiral         = 41
 intensity      = 73
 reset          = 0
 waves          = 26
+solid          = 0
 time_dialation = 19
 backwards      = 0
