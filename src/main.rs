@@ -1,5 +1,7 @@
 use portmidi as pm;
 use nannou::prelude::*;
+use nannou_audio as audio;
+use nannou_audio::Buffer;
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -132,7 +134,8 @@ fn main() {
 
 		a.new_window()
 			.view(update)
-			.build().unwrap(); 
+			.build().unwrap();
+
 
 		State {
 			ms,
