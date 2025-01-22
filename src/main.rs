@@ -3,6 +3,10 @@ use nannou::prelude::*;
 use nannou_audio as audio;
 use nannou_audio::Buffer;
 
+// check out this one for an example with nannou and audio fft
+// 7 months is pretty recent example compared to 5 years old
+// example from nannou repo https://github.com/PauSala/fftvisualizer/tree/main
+
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
@@ -133,7 +137,7 @@ fn main() {
 		});
 
 		a.new_window()
-			.view(update)
+			.view(view)
 			.build().unwrap();
 
 
@@ -151,7 +155,7 @@ fn main() {
 	nannou::app(init).run();
 }
 
-fn update(app: &App, s: &State, frame: Frame) {
+fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 	let mut ms = s.ms.lock().unwrap();
