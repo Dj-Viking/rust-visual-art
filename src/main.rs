@@ -1,11 +1,9 @@
+// example https://github.com/PauSala/fftvisualizer/tree/main
 use portmidi as pm;
 use nannou::prelude::*;
-// check out this one for an example with nannou and audio fft
-// 7 months is pretty recent example compared to 5 years old
-// example from nannou repo https://github.com/PauSala/fftvisualizer/tree/main
+
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use pulseaudio::protocol;
 use std::{
 	ffi::CString,
 	io::{BufReader, Read},
@@ -68,12 +66,14 @@ fn main() {
 		let (mut sock, protocol_version) =
 			connect_and_init();
 
+		// hard coded device name found with
+		// running `pacmd list-sources`
 		let device_name = "alsa_input.usb-Yamaha_Corporation_Yamaha_AG06MK2-00.analog-stereo";
 		
-		protocol::write_command_message(
+		pulseaudio::protocol::write_command_message(
 			sock.get_mut(),
 			10,
-			protocol::Command::GetSourceInfo(protocol::GetSourceInfo {
+			pulseaudio::protocol::Command::GetSourceInfo(pulseaudio::protocol::GetSourceInfo {
 				name: Some(CString::new(&*device_name).unwrap()),
 				..Default::default()
 			}),
@@ -81,12 +81,48 @@ fn main() {
 		).unwrap();
 
 		let (_, source_info) =
-			protocol::read_reply_message::<protocol::SourceInfo>(
+			pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::SourceInfo>(
 				&mut sock, protocol_version
 			).unwrap();
 
 		println!("audio socket {:#?}", sock);
 
+		// make recording stream on the server
+		pulseaudio::protocol::write_command_message(
+			sock.get_mut(),
+			99,
+			pulseaudio::protocol::Command::CreateRecordStream(
+				pulseaudio::protocol::RecordStreamParams {
+					source_index: Some(source_info.index),
+					sample_spec: pulseaudio::protocol::SampleSpec {
+						format: source_info.sample_spec.format,
+						channels: source_info.channel_map.num_channels(),
+						sample_rate: source_info.sample_spec.sample_rate,
+					},
+					channel_map: source_info.channel_map,
+					cvolume: Some(pulseaudio::protocol::ChannelVolume::norm(2)),
+					..Default::default()
+				}
+			),
+			protocol_version,
+		).unwrap();
+
+		let (_, record_stream) =
+			pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::CreateRecordStreamReply>(
+			&mut sock,
+			protocol_version,
+		).unwrap();
+
+		// buffer for the audio samples
+		let mut buf = vec![0; record_stream.buffer_attr.fragment_size as usize];
+		let mut float_buf = Vec::<f32>::new();
+
+		println!("record strim reply {:#?}", record_stream);
+		
+		// similar loop for audio here?
+
+		// audio setup end 
+		
 		let (cfg, dev) = {
 			let mut config: HashMap<String, DConfig> = 
 				toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
@@ -232,38 +268,45 @@ fn connect_and_init() -> (BufReader<UnixStream>, u16) {
     let cookie = pulseaudio::cookie_path_from_env()
         .and_then(|path| std::fs::read(path).ok())
         .unwrap_or_default();
-    let auth = protocol::AuthParams {
-        version: protocol::MAX_VERSION,
+    let auth = pulseaudio::protocol::AuthParams {
+        version: pulseaudio::protocol::MAX_VERSION,
         supports_shm: false,
         supports_memfd: false,
         cookie,
     };
 
-    protocol::write_command_message(
+    pulseaudio::protocol::write_command_message(
         sock.get_mut(),
         0,
-        protocol::Command::Auth(auth),
-        protocol::MAX_VERSION,
+        pulseaudio::protocol::Command::Auth(auth),
+        pulseaudio::protocol::MAX_VERSION,
     ).unwrap();
 
     let (_, auth_reply) =
-        protocol::read_reply_message::<protocol::AuthReply>(&mut sock, protocol::MAX_VERSION).unwrap();
-    let protocol_version = std::cmp::min(protocol::MAX_VERSION, auth_reply.version);
+        pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::AuthReply>(
+			&mut sock, pulseaudio::protocol::MAX_VERSION
+		).unwrap();
+    let protocol_version = std::cmp::min(
+		pulseaudio::protocol::MAX_VERSION, auth_reply.version
+	);
 
-    let mut props = protocol::Props::new();
+    let mut props = pulseaudio::protocol::Props::new();
     props.set(
-        protocol::Prop::ApplicationName,
+        pulseaudio::protocol::Prop::ApplicationName,
         CString::new("pulseaudio-rs-playback").unwrap(),
     );
 
-    protocol::write_command_message(
+    pulseaudio::protocol::write_command_message(
         sock.get_mut(),
         1,
-        protocol::Command::SetClientName(props),
+        pulseaudio::protocol::Command::SetClientName(props),
         protocol_version,
     ).unwrap();
 
     let _ =
-        protocol::read_reply_message::<protocol::SetClientNameReply>(&mut sock, protocol_version).unwrap();
+        pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::SetClientNameReply>(
+			&mut sock, protocol_version
+		).unwrap();
+
     (sock, protocol_version)
 }
