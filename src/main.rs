@@ -1,14 +1,16 @@
 use portmidi as pm;
 use nannou::prelude::*;
-use nannou_audio as audio;
-use nannou_audio::Buffer;
-
 // check out this one for an example with nannou and audio fft
 // 7 months is pretty recent example compared to 5 years old
 // example from nannou repo https://github.com/PauSala/fftvisualizer/tree/main
-
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use pulseaudio::protocol;
+use std::{
+	ffi::CString,
+	io::{BufReader, Read},
+	os::unix::net::UnixStream,
+};
 
 #[derive(Debug, Clone, PartialEq, Copy, Default)]
 #[repr(u8)]
@@ -61,6 +63,29 @@ fn main() {
 
 		let pm_ctx = pm::PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
+
+		// setup audio stream
+		let (mut sock, protocol_version) =
+			connect_and_init();
+
+		let device_name = "alsa_input.usb-Yamaha_Corporation_Yamaha_AG06MK2-00.analog-stereo";
+		
+		protocol::write_command_message(
+			sock.get_mut(),
+			10,
+			protocol::Command::GetSourceInfo(protocol::GetSourceInfo {
+				name: Some(CString::new(&*device_name).unwrap()),
+				..Default::default()
+			}),
+			protocol_version,
+		).unwrap();
+
+		let (_, source_info) =
+			protocol::read_reply_message::<protocol::SourceInfo>(
+				&mut sock, protocol_version
+			).unwrap();
+
+		println!("audio socket {:#?}", sock);
 
 		let (cfg, dev) = {
 			let mut config: HashMap<String, DConfig> = 
@@ -197,4 +222,48 @@ fn view(app: &App, s: &State, frame: Frame) {
 	}
 
 	draw.to_frame(app, &frame).unwrap();
+}
+// establish an audio client for the pulseaudio server
+fn connect_and_init() -> (BufReader<UnixStream>, u16) {
+
+    let socket_path = pulseaudio::socket_path_from_env().unwrap();
+    let mut sock = std::io::BufReader::new(UnixStream::connect(socket_path).unwrap());
+
+    let cookie = pulseaudio::cookie_path_from_env()
+        .and_then(|path| std::fs::read(path).ok())
+        .unwrap_or_default();
+    let auth = protocol::AuthParams {
+        version: protocol::MAX_VERSION,
+        supports_shm: false,
+        supports_memfd: false,
+        cookie,
+    };
+
+    protocol::write_command_message(
+        sock.get_mut(),
+        0,
+        protocol::Command::Auth(auth),
+        protocol::MAX_VERSION,
+    ).unwrap();
+
+    let (_, auth_reply) =
+        protocol::read_reply_message::<protocol::AuthReply>(&mut sock, protocol::MAX_VERSION).unwrap();
+    let protocol_version = std::cmp::min(protocol::MAX_VERSION, auth_reply.version);
+
+    let mut props = protocol::Props::new();
+    props.set(
+        protocol::Prop::ApplicationName,
+        CString::new("pulseaudio-rs-playback").unwrap(),
+    );
+
+    protocol::write_command_message(
+        sock.get_mut(),
+        1,
+        protocol::Command::SetClientName(props),
+        protocol_version,
+    ).unwrap();
+
+    let _ =
+        protocol::read_reply_message::<protocol::SetClientNameReply>(&mut sock, protocol_version).unwrap();
+    (sock, protocol_version)
 }

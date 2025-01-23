@@ -8,5 +8,5 @@ nannou = "0.19.0"
 portmidi = "0.3.0"
 toml = "0.8.19"
 serde = { version = "1.0.130", default-features = false, features = ["derive"] }
-nannou_audio = "0.19.0"
 ringbuf = "0.4.7"
+pulseaudio = "0.2.1"
