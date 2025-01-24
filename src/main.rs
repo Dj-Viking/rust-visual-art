@@ -1,6 +1,15 @@
-// example https://github.com/PauSala/fftvisualizer/tree/main
 use portmidi as pm;
 use nannou::prelude::*;
+
+use spectrum_analyzer::windows::hann_window;
+use spectrum_analyzer::{
+	FrequencySpectrum, 
+	samples_fft_to_spectrum, 
+	FrequencyLimit
+};
+use spectrum_analyzer::scaling::divide_by_N_sqrt;
+
+use byteorder::ReadBytesExt;
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -18,12 +27,16 @@ enum ActiveFunc {
 	V2     = 1,
 	Waves  = 2,
 	Solid  = 3,
+	Audio  = 4,
 }
 
 struct State {
-	funcs: &'static [fn(f32, f32, f32) -> f32],
-	ms:    Arc<Mutex<MutState>>,
+	funcs:        &'static [fn(f32, f32, f32, Option<&FrequencySpectrum>) -> f32],
+	ms:           Arc<Mutex<MutState>>,
+	audio_info:   pulseaudio::protocol::SourceInfo,
 }
+
+static mut AUDIO_STATE: Vec<f32> = Vec::<f32>::new();
 
 #[derive(Default)]
 struct MutState {
@@ -40,6 +53,7 @@ struct DConfig {
 	v2:             u8,
 	waves:          u8,
 	solid:          u8,
+	audio:          u8,
 	spiral:         u8,
 	intensity:      u8,
 	time_dialation: u8,
@@ -58,6 +72,7 @@ fn main() {
 
 	let init = |a: &App| { 
 		let ms = Arc::new(Mutex::new(MutState::default()));
+		let ms_ = ms.clone();
 
 		let pm_ctx = pm::PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
@@ -120,6 +135,45 @@ fn main() {
 		println!("record strim reply {:#?}", record_stream);
 		
 		// similar loop for audio here?
+		// in different thread to keep updating the float_buf and
+		// pass that buf into the state to get fft calculated on each frame maybe?
+		std::thread::spawn(move || {
+			//static mut BACKOFF: u8 = 0;
+
+			loop {
+				// lazy backoff for now...
+				std::thread::sleep(std::time::Duration::from_millis(1));
+
+				// let mut audio_state = audio_state_.lock().unwrap();
+				let descriptor = pulseaudio::protocol::read_descriptor(
+					&mut sock
+				).unwrap();
+				// channel of -1 is a command message. everything else is data
+				if descriptor.channel == u32::MAX {
+					let (_, msg) = pulseaudio::protocol::Command::read_tag_prefixed(
+						&mut sock,
+						protocol_version,
+					).unwrap();
+					println!("message from server when channel was u32 max ?? {:?}", msg);
+				} else {
+					buf.resize(descriptor.length as usize, 0);
+					unsafe { AUDIO_STATE.clear(); }
+
+					// read socket data
+					sock.read_exact(&mut buf).unwrap();
+					let mut cursor = std::io::Cursor::new(buf.as_slice());
+					while cursor.position() < cursor.get_ref().len() as u64 {
+						match record_stream.sample_spec.format {
+							pulseaudio::protocol::SampleFormat::S32Le => {
+								let sample = cursor.read_i32::<byteorder::LittleEndian>().unwrap();
+								unsafe { AUDIO_STATE.push(sample as f32); }
+							},
+							_ => unreachable!(),
+						}
+					}
+				}
+			}
+		});
 
 		// audio setup end 
 		
@@ -140,7 +194,6 @@ fn main() {
 			(unsafe { config.remove(dev.name()).unwrap_unchecked() }, dev)
 		};
 
-		let ms_ = ms.clone();
 		std::thread::spawn(move || {
 			let mut in_port = pm_ctx.input_port(dev, 256).unwrap();
 
@@ -150,7 +203,13 @@ fn main() {
 
 				let Ok(Some(m)) = in_port.read() else {
 					std::hint::spin_loop();
-					std::thread::sleep(std::time::Duration::from_millis(unsafe { BACKOFF * 10 } as u64));
+
+					std::thread::sleep(
+						std::time::Duration::from_millis(
+							unsafe { BACKOFF * 10 } as u64
+						)
+					);
+
 					unsafe { BACKOFF += 1; }
 					unsafe { BACKOFF %= 10; }
 					continue;
@@ -187,6 +246,10 @@ fn main() {
 					ms.func = ActiveFunc::Solid;
 				}
 
+				if channel == cfg.audio && intensity > 0 {
+					ms.func = ActiveFunc::Audio;
+				}
+
 				ms.is_reset = channel == cfg.reset && intensity > 0;
 
 				if channel == cfg.backwards && intensity > 0 {
@@ -201,14 +264,35 @@ fn main() {
 			.view(view)
 			.build().unwrap();
 
-
 		State {
 			ms,
+			audio_info: source_info,
 			funcs: &[
-				|y, x, t| y * x * t, // spiral
-				|y, x, t| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
-				|y, x, t| x / y * t, // waves
-				|y, x, t| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
+				|y, x, t, _| y * x * t, // spiral
+				|y, x, t, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
+				|y, x, t, _| x / y * t, // waves
+				|y, x, t, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
+				|y, x, t, fft_data| { // audio
+					let mut y_ = y.clone();
+					let mut x_ = x.clone();
+					let mut t_ = t.clone();
+					// what to do here??
+					// the app got a lot slower now :( but maybe on the right track?
+					if let Some(fft) = fft_data {
+						for (fr, fr_val) in fft_data.unwrap().data().iter() {
+							if fr.val() < 500.0 {
+								if fr_val.val() > 100.0 {
+									t_ += 100.0;
+								}
+							} else {
+
+							}
+						}
+						y_ * x_ * t_
+					} else {
+						y * x * t
+					}
+				}
 			],
 		}
 	};
@@ -220,9 +304,39 @@ fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 	let mut ms = s.ms.lock().unwrap();
+	static mut spectrum_fft_data: Option<FrequencySpectrum> = None;
+	
+	unsafe {
+		if !(&AUDIO_STATE.len() < &256) {
+
+			let hann_window = hann_window(&AUDIO_STATE[0..256]);
+
+			spectrum_fft_data = Some(samples_fft_to_spectrum(
+				&hann_window,
+				s.audio_info.sample_spec.sample_rate,
+				FrequencyLimit::Range(50.0, 12000.0),
+				Some(&divide_by_N_sqrt),
+			).unwrap());
+		}
+	}
+
+	//print!("\x1B[2J\x1B[1;1H");
+	// if let Some(ref s) = spectrum_fft_data {
+	// 	for (fr, fr_val) in spectrum_fft_data.unwrap().data().iter() {
+	// 		if fr.val() < 500.0 {
+	// 			println!("{:<10}Hz => {}", fr.to_string(), ".".repeat((fr_val.val() / 10000000.0) as usize));
+	// 		} else {
+	// 			println!("{:<10}Hz => {}", fr.to_string(), ".".repeat((fr_val.val() / (1000000.0) ) as usize));
+	// 		}
+	// 	}
+	// }
 
 	static mut TIME: f32 = 0.0;
+	let mut value: f32 = 0.0;
 
+	unsafe{
+		value = s.funcs[ms.func as u8 as usize](1.0, 1.0, 1.0, spectrum_fft_data.as_ref());
+	}
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
@@ -251,7 +365,10 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(time_divisor + 100000.0 * (ms.time_dialiation as f32 / 10.0))
 			+ ms.current_intensity as f32 / 100.0;
 
-		let hue = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t);
+		unsafe {
+			value = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, spectrum_fft_data.as_ref());
+		}
+		let hue = value;
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(hue, 1.0, 0.5);
@@ -259,6 +376,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	draw.to_frame(app, &frame).unwrap();
 }
+
 // establish an audio client for the pulseaudio server
 fn connect_and_init() -> (BufReader<UnixStream>, u16) {
 
