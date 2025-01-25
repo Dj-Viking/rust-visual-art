@@ -6,7 +6,7 @@ use byteorder::ReadBytesExt;
 
 use pulseaudio::protocol as ps;
 
-use crate::AUDIO_STATE; // FIXME
+use crate::SAMPLEBUF; // FIXME
 
 pub struct Audio {
 	pub sock: BufReader<UnixStream>,
@@ -58,6 +58,7 @@ impl Audio {
 
 		let (_, inf) = ps::read_reply_message::<ps::SourceInfo>(&mut sock, version)?;
 
+		#[cfg(debug_assertions)]
 		println!("audio socket {:#?}", sock);
 
 		// make recording stream on the server
@@ -93,13 +94,23 @@ impl Audio {
 		let desc = ps::read_descriptor(&mut self.sock)?;
 
 		self.buf.resize(desc.length as usize, 0);
-		unsafe { AUDIO_STATE.clear(); }
 
 		self.sock.read_exact(&mut self.buf)?;
 		let mut cursor = Cursor::new(self.buf.as_slice());
+
+		let mut i = 0;
+
 		while cursor.position() < cursor.get_ref().len() as u64 {
 			let sample = cursor.read_i32::<byteorder::LittleEndian>()?;
-			unsafe { AUDIO_STATE.push(sample as f32); }
+			unsafe { SAMPLEBUF[i] = sample as f32; }
+			i += 1;
+			if i >= unsafe { SAMPLEBUF.len() } { break; }
+		}
+
+		unsafe {
+			if i < SAMPLEBUF.len() {
+				(i..SAMPLEBUF.len()).for_each(|i| SAMPLEBUF[i] = 0.0);
+			}
 		}
 
 		Ok(())

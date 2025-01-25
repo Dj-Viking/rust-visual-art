@@ -26,12 +26,12 @@ enum ActiveFunc {
 }
 
 struct State {
-	funcs:       &'static [fn(f32, f32, f32, Option<&FrequencySpectrum>) -> f32],
+	funcs:       &'static [fn(f32, f32, f32, &FrequencySpectrum) -> f32],
 	ms:          Arc<Mutex<MutState>>,
 	sample_rate: u32,
 }
 
-pub static mut AUDIO_STATE: Vec<f32> = Vec::<f32>::new();
+pub static mut SAMPLEBUF: [f32; 256] = [0.0; 256];
 
 #[derive(Default)]
 struct MutState {
@@ -66,6 +66,8 @@ fn main() {
 	}
 
 	let init = |a: &App| { 
+		//unsafe { AUDIO_STATE = vec![0.0; 256]; }
+
 		let ms = Arc::new(Mutex::new(MutState::default()));
 		let ms_ = ms.clone();
 
@@ -129,7 +131,8 @@ fn main() {
 
 				let channel   = m.message.data1;
 				let intensity = m.message.data2;
-				
+
+				#[cfg(debug_assertions)]
 				println!("chan {} - intensity {}", channel, intensity);
 
 				let mut ms = ms_.lock().unwrap();
@@ -167,18 +170,14 @@ fn main() {
 				|y, x, mut t, fft_data| { // audio
 					// what to do here??
 					// the app got a lot slower now :( but maybe on the right track?
-					if let Some(fft) = fft_data {
-						for (fr, fr_val) in fft_data.unwrap().data().iter() {
-							if fr.val() < 500.0 {
-								if fr_val.val() > 100.0 { t += 100.0; }
-							} else {
+					for (fr, fr_val) in fft_data.data().iter() {
+						if fr.val() < 500.0 {
+							if fr_val.val() > 100.0 { t += 100.0; }
+						} else {
 
-							}
 						}
-						y * x * t
-					} else {
-						y * x * t
 					}
+					y * x * t
 				}
 			],
 		}
@@ -191,38 +190,18 @@ fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 	let mut ms = s.ms.lock().unwrap();
-	static mut spectrum_fft_data: Option<FrequencySpectrum> = None;
-	
-	unsafe {
-		if !(&AUDIO_STATE.len() < &256) {
-
-			let hann_window = hann_window(&AUDIO_STATE[0..256]);
-
-			spectrum_fft_data = Some(samples_fft_to_spectrum(
-				&hann_window,
-				s.sample_rate,
-				FrequencyLimit::Range(50.0, 12000.0),
-				Some(&divide_by_N_sqrt),
-			).unwrap());
-		}
-	}
-
-	//print!("\x1B[2J\x1B[1;1H");
-	// if let Some(ref s) = spectrum_fft_data {
-	// 	for (fr, fr_val) in spectrum_fft_data.unwrap().data().iter() {
-	// 		if fr.val() < 500.0 {
-	// 			println!("{:<10}Hz => {}", fr.to_string(), ".".repeat((fr_val.val() / 10000000.0) as usize));
-	// 		} else {
-	// 			println!("{:<10}Hz => {}", fr.to_string(), ".".repeat((fr_val.val() / (1000000.0) ) as usize));
-	// 		}
-	// 	}
-	// }
+	let spectrum_fft_data = samples_fft_to_spectrum(
+		&hann_window(unsafe { &SAMPLEBUF }),
+		s.sample_rate,
+		FrequencyLimit::Range(50.0, 12000.0),
+		Some(&divide_by_N_sqrt)
+	).unwrap();
 
 	static mut TIME: f32 = 0.0;
 	let mut value: f32 = 0.0;
 
 	unsafe{
-		value = s.funcs[ms.func as u8 as usize](1.0, 1.0, 1.0, spectrum_fft_data.as_ref());
+		value = s.funcs[ms.func as u8 as usize](1.0, 1.0, 1.0, &spectrum_fft_data);
 	}
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
@@ -253,7 +232,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 			+ ms.current_intensity as f32 / 100.0;
 
 		unsafe {
-			value = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, spectrum_fft_data.as_ref());
+			value = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &spectrum_fft_data);
 		}
 		let hue = value;
 
