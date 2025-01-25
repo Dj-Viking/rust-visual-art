@@ -9,9 +9,9 @@ use pulseaudio::protocol as ps;
 use crate::SAMPLEBUF; // FIXME
 
 pub struct Audio {
-	pub sock: BufReader<UnixStream>,
-	pub sinf: ps::CreateRecordStreamReply,
-	pub buf:  Vec<u8>,
+	sock: BufReader<UnixStream>,
+	sinf: ps::CreateRecordStreamReply,
+	buf:  Vec<u8>,
 }
 
 impl Audio {
@@ -101,8 +101,10 @@ impl Audio {
 		let mut i = 0;
 
 		while cursor.position() < cursor.get_ref().len() as u64 {
-			let sample = cursor.read_i32::<byteorder::LittleEndian>()?;
-			unsafe { SAMPLEBUF[i] = sample as f32; }
+			unsafe { 
+				SAMPLEBUF[i] = cursor.read_i32::<byteorder::LittleEndian>()? as f32; 
+			}
+
 			i += 1;
 			if i >= unsafe { SAMPLEBUF.len() } { break; }
 		}
@@ -118,7 +120,4 @@ impl Audio {
 
 	pub fn sample_rate(&self) -> u32 
 	{ self.sinf.sample_spec.sample_rate }
-
-	pub fn buffer(&self) -> &[u8] 
-	{ &self.buf }
 }

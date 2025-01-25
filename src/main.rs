@@ -74,23 +74,21 @@ fn main() {
 		let pm_ctx = PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
 
-		let audio = audio::Audio::init().unwrap();
+		let mut audio = audio::Audio::init().unwrap();
 		let sample_rate = audio.sample_rate();
 
 		// similar loop for audio here?
 		// in different thread to keep updating the float_buf and
 		// pass that buf into the state to get fft calculated on each frame maybe?
 		std::thread::spawn(move || {
-			let mut float_buf = Vec::<f32>::new();
+			//let mut float_buf = Vec::<f32>::new();
 
 			loop {
 				std::thread::sleep(std::time::Duration::from_millis(1));
-
+				audio.read_stream().unwrap()
 			}
 		});
 
-		// audio setup end 
-		
 		let (cfg, dev) = {
 			let mut config: HashMap<String, DConfig> = 
 				toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
@@ -190,7 +188,8 @@ fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 	let mut ms = s.ms.lock().unwrap();
-	let spectrum_fft_data = samples_fft_to_spectrum(
+
+	let fft = samples_fft_to_spectrum(
 		&hann_window(unsafe { &SAMPLEBUF }),
 		s.sample_rate,
 		FrequencyLimit::Range(50.0, 12000.0),
@@ -198,22 +197,18 @@ fn view(app: &App, s: &State, frame: Frame) {
 	).unwrap();
 
 	static mut TIME: f32 = 0.0;
-	let mut value: f32 = 0.0;
 
-	unsafe{
-		value = s.funcs[ms.func as u8 as usize](1.0, 1.0, 1.0, &spectrum_fft_data);
-	}
+	let time_divisor = match ms.func {
+		ActiveFunc::Waves | ActiveFunc::Solid => 1000.0,
+		_ => 1000000000.0,
+	};
+
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter()) {
-		let time_divisor = match ms.func {
-			ActiveFunc::Waves => 1000.0,
-			ActiveFunc::Solid => 1000.0,
-			_                 => 1000000000.0,
-		};
 
 		match ms.is_backwards {
 			true => unsafe { TIME -= app.duration.since_prev_update.as_secs_f32() },
@@ -231,13 +226,10 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(time_divisor + 100000.0 * (ms.time_dialiation as f32 / 10.0))
 			+ ms.current_intensity as f32 / 100.0;
 
-		unsafe {
-			value = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &spectrum_fft_data);
-		}
-		let hue = value;
+		let val = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &fft);
 
 		draw.rect().xy(r.xy()).wh(r.wh())
-			.hsl(hue, 1.0, 0.5);
+			.hsl(val, 1.0, 0.5);
 	}
 
 	draw.to_frame(app, &frame).unwrap();
