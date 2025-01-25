@@ -31,8 +31,6 @@ struct State {
 	sample_rate: u32,
 }
 
-pub static mut SAMPLEBUF: [f32; 256] = [0.0; 256];
-
 #[derive(Default)]
 struct MutState {
 	is_backwards:      bool,
@@ -77,12 +75,7 @@ fn main() {
 		let mut audio = audio::Audio::init().unwrap();
 		let sample_rate = audio.sample_rate();
 
-		// similar loop for audio here?
-		// in different thread to keep updating the float_buf and
-		// pass that buf into the state to get fft calculated on each frame maybe?
 		std::thread::spawn(move || {
-			//let mut float_buf = Vec::<f32>::new();
-
 			loop {
 				std::thread::sleep(std::time::Duration::from_millis(1));
 				audio.read_stream().unwrap()
@@ -190,7 +183,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 	let mut ms = s.ms.lock().unwrap();
 
 	let fft = samples_fft_to_spectrum(
-		&hann_window(unsafe { &SAMPLEBUF }),
+		&hann_window(unsafe { &audio::SAMPLEBUF }),
 		s.sample_rate,
 		FrequencyLimit::Range(50.0, 12000.0),
 		Some(&divide_by_N_sqrt)

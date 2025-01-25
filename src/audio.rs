@@ -6,7 +6,8 @@ use byteorder::ReadBytesExt;
 
 use pulseaudio::protocol as ps;
 
-use crate::SAMPLEBUF; // FIXME
+const SAMPLES: usize = 256;
+pub static mut SAMPLEBUF: [f32; SAMPLES] = [0.0; SAMPLES];
 
 pub struct Audio {
 	sock: BufReader<UnixStream>,
@@ -83,21 +84,16 @@ impl Audio {
 		let (_, sinf) = ps::read_reply_message::<ps::CreateRecordStreamReply>(&mut sock, version)?;
 		println!("record strim reply {:#?}", sinf);
 
-
 		Ok(Self {
-			buf: vec![0; sinf.buffer_attr.fragment_size as usize],
+			buf: vec![0; SAMPLES * 4],
 			sock, sinf,
 		})
 	}
 
 	pub fn read_stream(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-		let desc = ps::read_descriptor(&mut self.sock)?;
-
-		self.buf.resize(desc.length as usize, 0);
-
 		self.sock.read_exact(&mut self.buf)?;
-		let mut cursor = Cursor::new(self.buf.as_slice());
 
+		let mut cursor = Cursor::new(self.buf.as_slice());
 		let mut i = 0;
 
 		while cursor.position() < cursor.get_ref().len() as u64 {
