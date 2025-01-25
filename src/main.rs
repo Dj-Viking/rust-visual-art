@@ -1,4 +1,4 @@
-use portmidi as pm;
+use portmidi::PortMidi;
 use nannou::prelude::*;
 
 use spectrum_analyzer::windows::hann_window;
@@ -9,15 +9,10 @@ use spectrum_analyzer::{
 };
 use spectrum_analyzer::scaling::divide_by_N_sqrt;
 
-use byteorder::ReadBytesExt;
-
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::{
-	ffi::CString,
-	io::{BufReader, Read},
-	os::unix::net::UnixStream,
-};
+
+mod audio;
 
 #[derive(Debug, Clone, PartialEq, Copy, Default)]
 #[repr(u8)]
@@ -31,12 +26,12 @@ enum ActiveFunc {
 }
 
 struct State {
-	funcs:        &'static [fn(f32, f32, f32, Option<&FrequencySpectrum>) -> f32],
-	ms:           Arc<Mutex<MutState>>,
-	audio_info:   pulseaudio::protocol::SourceInfo,
+	funcs:       &'static [fn(f32, f32, f32, Option<&FrequencySpectrum>) -> f32],
+	ms:          Arc<Mutex<MutState>>,
+	sample_rate: u32,
 }
 
-static mut AUDIO_STATE: Vec<f32> = Vec::<f32>::new();
+pub static mut AUDIO_STATE: Vec<f32> = Vec::<f32>::new();
 
 #[derive(Default)]
 struct MutState {
@@ -64,7 +59,7 @@ const CONF_FILE: &str = "config.toml";
 
 fn main() {
 	if std::env::args().skip(1).any(|a| a == "list") {
-		let pm_ctx = pm::PortMidi::new().unwrap();
+		let pm_ctx = PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
 		devices.iter().for_each(|d| println!("{} {:?} {:?}", d.id(), d.name(), d.direction()));
 		std::process::exit(0);
@@ -74,104 +69,21 @@ fn main() {
 		let ms = Arc::new(Mutex::new(MutState::default()));
 		let ms_ = ms.clone();
 
-		let pm_ctx = pm::PortMidi::new().unwrap();
+		let pm_ctx = PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
 
-		// setup audio stream
-		let (mut sock, protocol_version) =
-			connect_and_init();
+		let audio = audio::Audio::init().unwrap();
+		let sample_rate = audio.sample_rate();
 
-		// hard coded device name found with
-		// running `pacmd list-sources`
-		let device_name = "alsa_input.usb-Yamaha_Corporation_Yamaha_AG06MK2-00.analog-stereo";
-		
-		pulseaudio::protocol::write_command_message(
-			sock.get_mut(),
-			10,
-			pulseaudio::protocol::Command::GetSourceInfo(pulseaudio::protocol::GetSourceInfo {
-				name: Some(CString::new(&*device_name).unwrap()),
-				..Default::default()
-			}),
-			protocol_version,
-		).unwrap();
-
-		let (_, source_info) =
-			pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::SourceInfo>(
-				&mut sock, protocol_version
-			).unwrap();
-
-		println!("audio socket {:#?}", sock);
-
-		// make recording stream on the server
-		pulseaudio::protocol::write_command_message(
-			sock.get_mut(),
-			99,
-			pulseaudio::protocol::Command::CreateRecordStream(
-				pulseaudio::protocol::RecordStreamParams {
-					source_index: Some(source_info.index),
-					sample_spec: pulseaudio::protocol::SampleSpec {
-						format: source_info.sample_spec.format,
-						channels: source_info.channel_map.num_channels(),
-						sample_rate: source_info.sample_spec.sample_rate,
-					},
-					channel_map: source_info.channel_map,
-					cvolume: Some(pulseaudio::protocol::ChannelVolume::norm(2)),
-					..Default::default()
-				}
-			),
-			protocol_version,
-		).unwrap();
-
-		let (_, record_stream) =
-			pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::CreateRecordStreamReply>(
-			&mut sock,
-			protocol_version,
-		).unwrap();
-
-		// buffer for the audio samples
-		let mut buf = vec![0; record_stream.buffer_attr.fragment_size as usize];
-		let mut float_buf = Vec::<f32>::new();
-
-		println!("record strim reply {:#?}", record_stream);
-		
 		// similar loop for audio here?
 		// in different thread to keep updating the float_buf and
 		// pass that buf into the state to get fft calculated on each frame maybe?
 		std::thread::spawn(move || {
-			//static mut BACKOFF: u8 = 0;
+			let mut float_buf = Vec::<f32>::new();
 
 			loop {
-				// lazy backoff for now...
 				std::thread::sleep(std::time::Duration::from_millis(1));
 
-				// let mut audio_state = audio_state_.lock().unwrap();
-				let descriptor = pulseaudio::protocol::read_descriptor(
-					&mut sock
-				).unwrap();
-				// channel of -1 is a command message. everything else is data
-				if descriptor.channel == u32::MAX {
-					let (_, msg) = pulseaudio::protocol::Command::read_tag_prefixed(
-						&mut sock,
-						protocol_version,
-					).unwrap();
-					println!("message from server when channel was u32 max ?? {:?}", msg);
-				} else {
-					buf.resize(descriptor.length as usize, 0);
-					unsafe { AUDIO_STATE.clear(); }
-
-					// read socket data
-					sock.read_exact(&mut buf).unwrap();
-					let mut cursor = std::io::Cursor::new(buf.as_slice());
-					while cursor.position() < cursor.get_ref().len() as u64 {
-						match record_stream.sample_spec.format {
-							pulseaudio::protocol::SampleFormat::S32Le => {
-								let sample = cursor.read_i32::<byteorder::LittleEndian>().unwrap();
-								unsafe { AUDIO_STATE.push(sample as f32); }
-							},
-							_ => unreachable!(),
-						}
-					}
-				}
 			}
 		});
 
@@ -185,7 +97,7 @@ fn main() {
 				});
 
 			let dev = devices.into_iter()
-				.find(|d| d.direction() == pm::Direction::Input && config.keys().any(|n| n == d.name()))
+				.find(|d| d.direction() == portmidi::Direction::Input && config.keys().any(|n| n == d.name()))
 				.unwrap_or_else(|| {
 					eprintln!("No device defined in config found");
 					std::process::exit(1);
@@ -222,39 +134,20 @@ fn main() {
 
 				let mut ms = ms_.lock().unwrap();
 
-				if channel == cfg.intensity {
-					ms.current_intensity = intensity;
-				}
-
-				if channel == cfg.time_dialation {
-					ms.time_dialiation = intensity;
-				}
-
-				if channel == cfg.spiral && intensity > 0 {
-					ms.func = ActiveFunc::Spiral;
-				}
-
-				if channel == cfg.v2 && intensity > 0 {
-					ms.func = ActiveFunc::V2;
-				}
-
-				if channel == cfg.waves && intensity > 0 {
-					ms.func = ActiveFunc::Waves;
-				}
-
-				if channel == cfg.solid && intensity > 0 {
-					ms.func = ActiveFunc::Solid;
-				}
-
-				if channel == cfg.audio && intensity > 0 {
-					ms.func = ActiveFunc::Audio;
+				match channel {
+					c if c == cfg.intensity => ms.current_intensity = intensity,
+					c if c == cfg.time_dialation => ms.time_dialiation = intensity,
+					_ if intensity == 0     => (),
+					c if c == cfg.spiral    => ms.func = ActiveFunc::Spiral,
+					c if c == cfg.v2        => ms.func = ActiveFunc::V2,
+					c if c == cfg.waves     => ms.func = ActiveFunc::Waves,
+					c if c == cfg.solid     => ms.func = ActiveFunc::Solid,
+					c if c == cfg.audio     => ms.func = ActiveFunc::Audio,
+					c if c == cfg.backwards => ms.is_backwards = !ms.is_backwards,
+					_ => (),
 				}
 
 				ms.is_reset = channel == cfg.reset && intensity > 0;
-
-				if channel == cfg.backwards && intensity > 0 {
-					ms.is_backwards = !ms.is_backwards;
-				}
 
 				unsafe { BACKOFF = 0; }
 			}
@@ -265,30 +158,24 @@ fn main() {
 			.build().unwrap();
 
 		State {
-			ms,
-			audio_info: source_info,
+			ms, sample_rate,
 			funcs: &[
 				|y, x, t, _| y * x * t, // spiral
 				|y, x, t, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
 				|y, x, t, _| x / y * t, // waves
 				|y, x, t, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
-				|y, x, t, fft_data| { // audio
-					let mut y_ = y.clone();
-					let mut x_ = x.clone();
-					let mut t_ = t.clone();
+				|y, x, mut t, fft_data| { // audio
 					// what to do here??
 					// the app got a lot slower now :( but maybe on the right track?
 					if let Some(fft) = fft_data {
 						for (fr, fr_val) in fft_data.unwrap().data().iter() {
 							if fr.val() < 500.0 {
-								if fr_val.val() > 100.0 {
-									t_ += 100.0;
-								}
+								if fr_val.val() > 100.0 { t += 100.0; }
 							} else {
 
 							}
 						}
-						y_ * x_ * t_
+						y * x * t
 					} else {
 						y * x * t
 					}
@@ -313,7 +200,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 			spectrum_fft_data = Some(samples_fft_to_spectrum(
 				&hann_window,
-				s.audio_info.sample_spec.sample_rate,
+				s.sample_rate,
 				FrequencyLimit::Range(50.0, 12000.0),
 				Some(&divide_by_N_sqrt),
 			).unwrap());
@@ -375,56 +262,4 @@ fn view(app: &App, s: &State, frame: Frame) {
 	}
 
 	draw.to_frame(app, &frame).unwrap();
-}
-
-// establish an audio client for the pulseaudio server
-fn connect_and_init() -> (BufReader<UnixStream>, u16) {
-
-    let socket_path = pulseaudio::socket_path_from_env().unwrap();
-    let mut sock = std::io::BufReader::new(UnixStream::connect(socket_path).unwrap());
-
-    let cookie = pulseaudio::cookie_path_from_env()
-        .and_then(|path| std::fs::read(path).ok())
-        .unwrap_or_default();
-    let auth = pulseaudio::protocol::AuthParams {
-        version: pulseaudio::protocol::MAX_VERSION,
-        supports_shm: false,
-        supports_memfd: false,
-        cookie,
-    };
-
-    pulseaudio::protocol::write_command_message(
-        sock.get_mut(),
-        0,
-        pulseaudio::protocol::Command::Auth(auth),
-        pulseaudio::protocol::MAX_VERSION,
-    ).unwrap();
-
-    let (_, auth_reply) =
-        pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::AuthReply>(
-			&mut sock, pulseaudio::protocol::MAX_VERSION
-		).unwrap();
-    let protocol_version = std::cmp::min(
-		pulseaudio::protocol::MAX_VERSION, auth_reply.version
-	);
-
-    let mut props = pulseaudio::protocol::Props::new();
-    props.set(
-        pulseaudio::protocol::Prop::ApplicationName,
-        CString::new("pulseaudio-rs-playback").unwrap(),
-    );
-
-    pulseaudio::protocol::write_command_message(
-        sock.get_mut(),
-        1,
-        pulseaudio::protocol::Command::SetClientName(props),
-        protocol_version,
-    ).unwrap();
-
-    let _ =
-        pulseaudio::protocol::read_reply_message::<pulseaudio::protocol::SetClientNameReply>(
-			&mut sock, protocol_version
-		).unwrap();
-
-    (sock, protocol_version)
 }
