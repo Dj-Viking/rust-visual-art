@@ -59,7 +59,7 @@ fn main() {
 
 		if !std::env::args().skip(1).any(|a| a == "keys") {
 
-			println!("[INFO]: not running in keyboard mode using midi controller");
+			println!("[INFO]: now running in keyboard mode using midi controller");
 
 			let (cfg, dev) = {
 				let mut config: HashMap<String, DConfig> = 
