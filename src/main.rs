@@ -24,7 +24,7 @@ struct MutState {
 	is_backwards:      bool,
 	is_reset:          bool,
 	current_intensity: u8,
-	time_dialation:   u8,
+	time_dialation:    u8,
 	func:              ActiveFunc,
 }
 
