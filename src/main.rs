@@ -172,6 +172,7 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 			ms.is_reset = true;
 		},
 		Key::S => ms.func = ActiveFunc::Spiral,
+		Key::W => ms.func = ActiveFunc::Waves,
 		Key::O => ms.func = ActiveFunc::Solid,
 		Key::V => ms.func = ActiveFunc::V2,
 		Key::Up => {
