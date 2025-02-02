@@ -167,26 +167,17 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
 		Key::R => { ms.is_reset = true; },
+
 		Key::S => ms.func = ActiveFunc::Spiral,
 		Key::W => ms.func = ActiveFunc::Waves,
 		Key::O => ms.func = ActiveFunc::Solid,
 		Key::V => ms.func = ActiveFunc::V2,
-		Key::Up => {
-			if ms.current_intensity == 255 { return; } 
-			ms.current_intensity += 1;
-		},
-		Key::Down => {
-			if ms.current_intensity == 0 { return; }
-			ms.current_intensity -= 1;
-		},
-		Key::Right => {
-			if ms.time_dialation == 255 { return; } 
-			ms.time_dialation += 1;
-		},
-		Key::Left => {
-			if ms.time_dialation == 0 { return; }
-			ms.time_dialation -= 1;
-		},
+
+		Key::Up    => { if ms.current_intensity < 255 { ms.current_intensity += 1; } },
+		Key::Down  => { if ms.current_intensity > 0 { ms.current_intensity -= 1; } },
+		Key::Right => { if ms.time_dialation < 255 { ms.time_dialation += 1; } },
+		Key::Left  => { if ms.time_dialation > 0 { ms.time_dialation -= 1; } },
+
 		_ => (),
 	}
 }
