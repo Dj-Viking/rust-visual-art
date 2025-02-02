@@ -158,9 +158,7 @@ fn main() {
 fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
-		Key::R => {
-			ms.is_reset = false;
-		},
+		Key::R => { ms.is_reset = false; },
 		_ => ()
 	}
 }
@@ -168,9 +166,7 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
-		Key::R => {
-			ms.is_reset = true;
-		},
+		Key::R => { ms.is_reset = true; },
 		Key::S => ms.func = ActiveFunc::Spiral,
 		Key::W => ms.func = ActiveFunc::Waves,
 		Key::O => ms.func = ActiveFunc::Solid,
