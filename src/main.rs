@@ -155,7 +155,7 @@ fn main() {
 
 	nannou::app(init).run();
 }
-fn key_released(app: &App, s: &mut State, key: Key) {
+fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
 		Key::R => {
@@ -165,7 +165,7 @@ fn key_released(app: &App, s: &mut State, key: Key) {
 	}
 }
 
-fn key_pressed(app: &App, s: &mut State, key: Key) {
+fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
 		Key::R => {
