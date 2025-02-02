@@ -174,9 +174,9 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 		Key::V => ms.func = ActiveFunc::V2,
 
 		Key::Up    => { if ms.current_intensity < 255 { ms.current_intensity += 1; } },
-		Key::Down  => { if ms.current_intensity > 0 { ms.current_intensity -= 1; } },
-		Key::Right => { if ms.time_dialation < 255 { ms.time_dialation += 1; } },
-		Key::Left  => { if ms.time_dialation > 0 { ms.time_dialation -= 1; } },
+		Key::Down  => { if ms.current_intensity > 0   { ms.current_intensity -= 1; } },
+		Key::Right => { if ms.time_dialation    < 255 { ms.time_dialation += 1; } },
+		Key::Left  => { if ms.time_dialation    > 0   { ms.time_dialation -= 1; } },
 
 		_ => (),
 	}
