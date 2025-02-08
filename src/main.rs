@@ -164,9 +164,14 @@ fn main() {
 				|y, x, t, _| x / y * t, // waves
 				|y, x, t, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
 				|y, x, mut t, fft_data| { // audio
-					// what to do here??
 					for (fr, fr_val) in fft_data.data().iter() {
-						if fr_val.val() > 100.0 { t += 100.0; }
+						let freq = fr.val();
+						let mag = fr_val.val() / 1000000.0;
+
+						if freq > 100.0 && mag > 0.001 {
+							 t -= (mag * 2.0);
+							//println!("what is happening freq - {} | mag - {}", freq, mag);
+						}
 					}
 					y * x * t
 				}
