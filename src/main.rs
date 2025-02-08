@@ -36,7 +36,7 @@ struct MutState {
 	is_backwards:      bool,
 	is_reset:          bool,
 	current_intensity: u8,
-	time_dialiation:   u8,
+	time_dialation:    u8,
 	func:              ActiveFunc,
 }
 
@@ -56,6 +56,7 @@ struct DConfig {
 const CONF_FILE: &str = "config.toml";
 
 fn main() {
+	
 	if std::env::args().skip(1).any(|a| a == "list") {
 		let pm_ctx = PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
@@ -82,74 +83,78 @@ fn main() {
 			}
 		});
 
-		let (cfg, dev) = {
-			let mut config: HashMap<String, DConfig> = 
-				toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
-					eprintln!("Error reading config file: {e}");
-					std::process::exit(1);
-				});
+		if !std::env::args().skip(1).any(|a| a == "keys") {
 
-			let dev = devices.into_iter()
-				.find(|d| d.direction() == portmidi::Direction::Input && config.keys().any(|n| n == d.name()))
-				.unwrap_or_else(|| {
-					eprintln!("No device defined in config found");
-					std::process::exit(1);
-				});
+			let (cfg, dev) = {
+				let mut config: HashMap<String, DConfig> = 
+					toml::from_str(&std::fs::read_to_string(CONF_FILE).unwrap()).unwrap_or_else(|e| {
+						eprintln!("Error reading config file: {e}");
+						std::process::exit(1);
+					});
 
-			(unsafe { config.remove(dev.name()).unwrap_unchecked() }, dev)
-		};
+				let dev = devices.into_iter()
+					.find(|d| d.direction() == portmidi::Direction::Input && config.keys().any(|n| n == d.name()))
+					.unwrap_or_else(|| {
+						eprintln!("No device defined in config found");
+						std::process::exit(1);
+					});
 
-		std::thread::spawn(move || {
-			let mut in_port = pm_ctx.input_port(dev, 256).unwrap();
+				(unsafe { config.remove(dev.name()).unwrap_unchecked() }, dev)
+			};
+			std::thread::spawn(move || {
+				let mut in_port = pm_ctx.input_port(dev, 256).unwrap();
 
-			loop {
-				static mut BACKOFF: u8 = 0;
-				// TODO: listen flag
+				loop {
+					static mut BACKOFF: u8 = 0;
+					// TODO: listen flag
 
-				let Ok(Some(m)) = in_port.read() else {
-					std::hint::spin_loop();
+					let Ok(Some(m)) = in_port.read() else {
+						std::hint::spin_loop();
 
-					std::thread::sleep(
-						std::time::Duration::from_millis(
-							unsafe { BACKOFF * 10 } as u64
-						)
-					);
+						std::thread::sleep(
+							std::time::Duration::from_millis(
+								unsafe { BACKOFF * 10 } as u64
+							)
+						);
 
-					unsafe { BACKOFF += 1; }
-					unsafe { BACKOFF %= 10; }
-					continue;
-				};
+						unsafe { BACKOFF += 1; }
+						unsafe { BACKOFF %= 10; }
+						continue;
+					};
 
-				let channel   = m.message.data1;
-				let intensity = m.message.data2;
+					let channel   = m.message.data1;
+					let intensity = m.message.data2;
 
-				#[cfg(debug_assertions)]
-				println!("chan {} - intensity {}", channel, intensity);
+					#[cfg(debug_assertions)]
+					println!("chan {} - intensity {}", channel, intensity);
 
-				let mut ms = ms_.lock().unwrap();
+					let mut ms = ms_.lock().unwrap();
 
-				match channel {
-					c if c == cfg.intensity => ms.current_intensity = intensity,
-					c if c == cfg.time_dialation => ms.time_dialiation = intensity,
-					_ if intensity == 0     => (),
-					c if c == cfg.spiral    => ms.func = ActiveFunc::Spiral,
-					c if c == cfg.v2        => ms.func = ActiveFunc::V2,
-					c if c == cfg.waves     => ms.func = ActiveFunc::Waves,
-					c if c == cfg.solid     => ms.func = ActiveFunc::Solid,
-					c if c == cfg.audio     => ms.func = ActiveFunc::Audio,
-					c if c == cfg.backwards => ms.is_backwards = !ms.is_backwards,
-					_ => (),
+					match channel {
+						c if c == cfg.intensity => ms.current_intensity = intensity,
+						c if c == cfg.time_dialation => ms.time_dialation = intensity,
+						_ if intensity == 0     => (),
+						c if c == cfg.spiral    => ms.func = ActiveFunc::Spiral,
+						c if c == cfg.v2        => ms.func = ActiveFunc::V2,
+						c if c == cfg.waves     => ms.func = ActiveFunc::Waves,
+						c if c == cfg.solid     => ms.func = ActiveFunc::Solid,
+						c if c == cfg.audio     => ms.func = ActiveFunc::Audio,
+						c if c == cfg.backwards => ms.is_backwards = !ms.is_backwards,
+						_ => (),
+					}
+
+					ms.is_reset = channel == cfg.reset && intensity > 0;
+
+					unsafe { BACKOFF = 0; }
 				}
-
-				ms.is_reset = channel == cfg.reset && intensity > 0;
-
-				unsafe { BACKOFF = 0; }
-			}
-		});
+			});
+		}
 
 		a.new_window()
 			.view(view)
-			.build().unwrap();
+			.key_pressed(key_pressed)
+			.key_released(key_released)
+			.build().unwrap(); 
 
 		State {
 			ms, sample_rate,
@@ -160,13 +165,8 @@ fn main() {
 				|y, x, t, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
 				|y, x, mut t, fft_data| { // audio
 					// what to do here??
-					// the app got a lot slower now :( but maybe on the right track?
 					for (fr, fr_val) in fft_data.data().iter() {
-						if fr.val() < 500.0 {
-							if fr_val.val() > 100.0 { t += 100.0; }
-						} else {
-
-						}
+						if fr_val.val() > 100.0 { t += 100.0; }
 					}
 					y * x * t
 				}
@@ -176,6 +176,33 @@ fn main() {
 
 	nannou::app(init).run();
 }
+fn key_released(_: &App, s: &mut State, key: Key) {
+	let mut ms = s.ms.lock().unwrap();
+	match key {
+		Key::R => { ms.is_reset = false; },
+		_ => ()
+	}
+}
+
+fn key_pressed(_: &App, s: &mut State, key: Key) {
+	let mut ms = s.ms.lock().unwrap();
+	match key {
+		Key::R => { ms.is_reset = true; },
+
+		Key::S => ms.func = ActiveFunc::Spiral,
+		Key::W => ms.func = ActiveFunc::Waves,
+		Key::O => ms.func = ActiveFunc::Solid,
+		Key::V => ms.func = ActiveFunc::V2,
+
+		Key::Up    => { if ms.current_intensity < 255 { ms.current_intensity += 1; } },
+		Key::Down  => { if ms.current_intensity > 0   { ms.current_intensity -= 1; } },
+		Key::Right => { if ms.time_dialation    < 255 { ms.time_dialation += 1; } },
+		Key::Left  => { if ms.time_dialation    > 0   { ms.time_dialation -= 1; } },
+
+		_ => (),
+	}
+}
+
 
 fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
@@ -216,7 +243,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		if ms.is_reset { unsafe { TIME = 0.0; } } 
 		
 		let t = unsafe { TIME } /
-			(time_divisor + 100000.0 * (ms.time_dialiation as f32 / 10.0))
+			(time_divisor + 100000.0 * (ms.time_dialation as f32 / 10.0))
 			+ ms.current_intensity as f32 / 100.0;
 
 		let val = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &fft);
