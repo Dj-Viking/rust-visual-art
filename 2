@@ -26,7 +26,7 @@ enum ActiveFunc {
 }
 
 struct State {
-	funcs:       &'static [fn(f32, f32, f32, &FrequencySpectrum, f32) -> f32],
+	funcs:       &'static [fn(f32, f32, f32, &FrequencySpectrum) -> f32],
 	ms:          Arc<Mutex<MutState>>,
 	sample_rate: u32,
 }
@@ -35,9 +35,9 @@ struct State {
 struct MutState {
 	is_backwards:      bool,
 	is_reset:          bool,
-	current_intensity: f32,
-	time_dialation:    f32,
-	decay_factor:      f32,
+	current_intensity: u8,
+	time_dialation:    u8,
+	decay_factor:      u8,
 	func:              ActiveFunc,
 }
 
@@ -132,17 +132,10 @@ fn main() {
 
 					let mut ms = ms_.lock().unwrap();
 
-					let max_intensity_range = match ms.func {
-						ActiveFunc::Solid | ActiveFunc::Waves => 100.0,
-						_ => 0.01,
-					};
-
 					match channel {
-						c if c == cfg.backwards => ms.is_backwards = !ms.is_backwards,
-
-						c if c == cfg.intensity      => ms.current_intensity = lerp_float(intensity, 0.0, max_intensity_range, 0, 127),
-						c if c == cfg.decay_factor   => ms.decay_factor = lerp_float(intensity, 0.0, 1.0, 0, 127),
-						c if c == cfg.time_dialation => ms.time_dialation = lerp_float(intensity, 0.0, 100.0, 0, 127),
+						c if c == cfg.intensity      => ms.current_intensity = intensity,
+						c if c == cfg.decay_factor   => ms.decay_factor = intensity,
+						c if c == cfg.time_dialation => ms.time_dialation = intensity,
 						_ if intensity == 0          => (),
 
 						c if c == cfg.spiral    => ms.func = ActiveFunc::Spiral,
@@ -150,7 +143,7 @@ fn main() {
 						c if c == cfg.waves     => ms.func = ActiveFunc::Waves,
 						c if c == cfg.solid     => ms.func = ActiveFunc::Solid,
 						c if c == cfg.audio     => ms.func = ActiveFunc::Audio,
-
+						c if c == cfg.backwards => ms.is_backwards = !ms.is_backwards,
 						_ => (),
 					}
 
@@ -170,29 +163,22 @@ fn main() {
 		State {
 			ms, sample_rate,
 			funcs: &[
-				|y, x, t, _, _| y * x * t, // spiral
-				|y, x, t, _, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
-				|y, x, t, _, _| x / y * t, // waves
-				|y, x, t, _, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
-				|y, x, t, fft_data, time_divisor| { // audio
-					let mut magthing = 0.0;
+				|y, x, t, _| y * x * t, // spiral
+				|y, x, t, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
+				|y, x, t, _| x / y * t, // waves
+				|y, x, t, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
+				|y, x, mut t, fft_data| { // audio
 					for (fr, fr_val) in fft_data.data().iter() {
 						let freq = fr.val();
 						let mag = fr_val.val() / 1000000.0;
 
 						if freq <= 1000.0 && mag > 0.001 {
-							//println!("whats the mag {}", mag);
-							magthing = mag * 20.0;
-							//break;
+							 t -= (mag * 2.0);
+							break;
 							//println!("what is happening freq - {} | mag - {}", freq, mag);
 						}
 					}
-
-					//println!("what is this thing {}", magthing);
-					if magthing < 0.1 { magthing = 0.0 }
-					//println!("");
-					//println!("what is this {}", t / 100.0);
-					(y - magthing) * (x + magthing) * t / 100.0
+					x * y * t
 				}
 			],
 		}
@@ -219,10 +205,10 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 		Key::V => ms.func = ActiveFunc::V2,
 		Key::A => ms.func = ActiveFunc::Audio,
 
-		Key::Up    => { if ms.current_intensity < 255.0 { ms.current_intensity += 1.0; } },
-		Key::Down  => { if ms.current_intensity > 0.0   { ms.current_intensity -= 1.0; } },
-		Key::Right => { if ms.time_dialation    < 255.0 { ms.time_dialation += 1.0; } },
-		Key::Left  => { if ms.time_dialation    > 0.0   { ms.time_dialation -= 1.0; } },
+		Key::Up    => { if ms.current_intensity < 255 { ms.current_intensity += 1; } },
+		Key::Down  => { if ms.current_intensity > 0   { ms.current_intensity -= 1; } },
+		Key::Right => { if ms.time_dialation    < 255 { ms.time_dialation += 1; } },
+		Key::Left  => { if ms.time_dialation    > 0   { ms.time_dialation -= 1; } },
 
 		_ => (),
 	}
@@ -247,18 +233,12 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	let fr_mags: Vec<(f32, f32)> = fft.data().iter().map(|(fr, mag)| (fr.val(), mag.val())).collect();
 
-	// a pretty good decay factor
-	// controlled by midi but here for reference
-	// gives a slow smeary like feeling
-	const FACTOR: f32 = 0.99;
+	const FACTOR: f32 = 0.98;
 
 	fr_mags.iter().map(|(_, x)| x)
 		.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
 			if *c > *p { *p = *c; } 
-			//else { *p *= ms.decay_factor; });
-			else { *p *= FACTOR; });
-
-	//let fr_mags = exponential_moving_average(&fr_mags, 0.2);
+			else { *p *= ms.decay_factor; });
 
 	//println!("length of fft data stuff {}", fft_data.data().iter().len());
 	static mut TIME: f32 = 0.0;
@@ -291,7 +271,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(time_divisor + 100000.0 * (ms.time_dialation as f32 / 10.0))
 			+ ms.current_intensity as f32 / 100.0;
 
-		let val = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &fft, time_divisor);
+		let val = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &fft);
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(val, 1.0, 0.5);
@@ -299,47 +279,3 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	draw.to_frame(app, &frame).unwrap();
 }
-
-fn exponential_moving_average(data: &[(f32, f32)], alpha: f32) -> Vec<(f32, f32)> {
-    let mut smoothed = Vec::with_capacity(data.len());
-    let mut prev = data[0];
-    for &(fr, val) in data {
-        let smoothed_val = alpha * val + (1.0 - alpha) * prev.1;
-        smoothed.push((fr, smoothed_val));
-        prev = (fr, smoothed_val);
-    }
-    smoothed
-}
-
-// output a number within a specific range from an entirely different range
-/*
- * @param input          - input value to determine what position in the range the number sits
- * @param min_output     - minimum percentage value
- * @param max_output     - maximum percentage value
- * @param min_input      - minimum input value the range can be
- * @param max_input      - maximum input value the range can be
- */
-fn lerp_float(
-    input:      u8,
-    min_output: f32,
-    max_output: f32,
-    min_input:  u8,
-    max_input:  u8,
-) -> f32 {
-
-	let val = (max_output - min_output) * ((input - min_input) as f32)
-	   / ((max_input - min_input) as f32) + min_output;
-	println!("lerp float {}", val);
-	val
-}
-
-// fn lerp_unsigned(
-//     input:      u8,
-//     min_output: u8,
-//     max_output: u8,
-//     min_input:  u8,
-//     max_input:  u8,
-// ) -> u8 {
-// 	Math.floor(((max_output - min_output) * (input - min_input)) 
-// 		/ (max_input - min_input) + min_output)
-// }
