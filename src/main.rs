@@ -181,15 +181,17 @@ fn main() {
 						let mag = fr_val.val() / 1000000.0;
 
 						if freq <= 1000.0 && mag > 0.001 {
-							//println!("whats the mag {}", mag);
-							magthing = mag * 20.0;
-							//break;
+							if mag > 100.0 {
+								println!("whats the mag {}", mag);
+								magthing = mag * 20.0;
+							}
+							break;
 							//println!("what is happening freq - {} | mag - {}", freq, mag);
 						}
 					}
 
 					//println!("what is this thing {}", magthing);
-					if magthing < 0.1 { magthing = 0.0 }
+					if magthing < 101.0 { magthing = 0.0 }
 					//println!("");
 					//println!("what is this {}", t / 100.0);
 					(y - magthing) * (x + magthing) * t / 100.0
@@ -203,7 +205,7 @@ fn main() {
 fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
-		Key::R => { ms.is_reset = false; },
+		Key::R => ms.is_reset = false,
 		_ => ()
 	}
 }
@@ -211,7 +213,7 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
-		Key::R => { ms.is_reset = true; },
+		Key::R => ms.is_reset = true,
 
 		Key::S => ms.func = ActiveFunc::Spiral,
 		Key::W => ms.func = ActiveFunc::Waves,
@@ -219,11 +221,11 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 		Key::V => ms.func = ActiveFunc::V2,
 		Key::A => ms.func = ActiveFunc::Audio,
 
-		Key::Up    => { if ms.current_intensity < 255.0 { ms.current_intensity += 1.0; } },
-		Key::Down  => { if ms.current_intensity > 0.0   { ms.current_intensity -= 1.0; } },
-		Key::Right => { if ms.time_dialation    < 255.0 { ms.time_dialation += 1.0; } },
-		Key::Left  => { if ms.time_dialation    > 0.0   { ms.time_dialation -= 1.0; } },
-
+		Key::Up    if ms.current_intensity < 255.0 => ms.current_intensity += 1.0,
+		Key::Down  if ms.current_intensity > 0.0   => ms.current_intensity -= 1.0,
+		Key::Right if ms.time_dialation    < 255.0 => ms.time_dialation += 1.0,
+		Key::Left  if ms.time_dialation    > 0.0   => ms.time_dialation -= 1.0,
+ 
 		_ => (),
 	}
 }
@@ -250,7 +252,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 	// a pretty good decay factor
 	// controlled by midi but here for reference
 	// gives a slow smeary like feeling
-	const FACTOR: f32 = 0.99;
+	const FACTOR: f32 = 0.9999;
 
 	fr_mags.iter().map(|(_, x)| x)
 		.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
