@@ -170,28 +170,28 @@ fn main() {
 		State {
 			ms, sample_rate,
 			funcs: &[
-				|y, x, t, _, _| y * x * t, // spiral
-				|y, x, t, _, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2
-				|y, x, t, _, _| x / y * t, // waves
-				|y, x, t, _, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solid
-				|y, x, t, fft_data, time_divisor| { // audio
-					let mut magthing = 0.0;
-					for (fr, fr_val) in fft_data.data().iter() {
-						let freq = fr.val();
-						let mag = fr_val.val() / 1000000.0;
+				|y, x, t, _, _| y * x * t, // spiralfunc
+				|y, x, t, _, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2func
+				|y, x, t, _, _| x / y * t, // wavesfunc
+				|y, x, t, _, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solidfunc
+				|y, x, t, fft_data, time_divisor| { // audiofunc
 
-						if freq <= 1000.0 && mag > 0.001 {
-							if mag > 100.0 {
-								println!("whats the mag {}", mag);
-								magthing = mag * 20.0;
-							}
-							break;
-							//println!("what is happening freq - {} | mag - {}", freq, mag);
-						}
-					}
+					// magnitudes are huge coming from fft_data
+					// lets make it a usable number for our situation
+					// can noise clamp be controllable?
+					const NOISE_CLAMP: f32 = 10.0;
+					const FREQ_AVERAGE: f32 = 500.0;
+					const MAG_DIVISOR: f32 = 1000000.0;
 
-					//println!("what is this thing {}", magthing);
+					let mut magthing = fft_data.data().iter()
+						.map(|&(f, m)| (f.val(), m.val() / MAG_DIVISOR))
+						.find(|&(f, m)| f >= FREQ_AVERAGE)
+						.and_then(|(_, m)| (m > NOISE_CLAMP).then(|| m))
+						.unwrap_or(0.0);
+
+					// can't get around the noise - not sure what to do with this yet
 					if magthing < 101.0 { magthing = 0.0 }
+					println!("what is this thing {}", magthing);
 					//println!("");
 					//println!("what is this {}", t / 100.0);
 					(y - magthing) * (x + magthing) * t / 100.0
@@ -202,6 +202,7 @@ fn main() {
 
 	nannou::app(init).run();
 }
+
 fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
@@ -229,8 +230,6 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 		_ => (),
 	}
 }
-
-
 
 fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
@@ -287,7 +286,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 			ms.is_backwards = !ms.is_backwards;
 		}
 
-		if ms.is_reset { unsafe { TIME = 0.0; } } 
+		if ms.is_reset { unsafe { TIME = 0.0; } }
 		
 		let t = unsafe { TIME } /
 			(time_divisor + 100000.0 * (ms.time_dialation as f32 / 10.0))
