@@ -41,7 +41,7 @@ struct MutState {
 	func:              ActiveFunc,
 }
 
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 struct DConfig {
 	backwards:      u8,
 	v2:             u8,
@@ -112,9 +112,6 @@ fn main() {
 						unsafe { BACKOFF %= 10; }
 						continue;
 					};
-
-					#[cfg(debug_assertions)]
-					println!("chan {} - intensity {}", channel, intensity);
 
 					let mut ms = ms_.lock().unwrap();
 
