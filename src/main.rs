@@ -4,7 +4,7 @@
 use portmidi::PortMidi;
 use nannou::prelude::*;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 mod audio;
 mod midi;
@@ -26,8 +26,15 @@ struct MutState {
 	active_func:       usize,
 }
 
-const CONF_FILE:   &str = "config.toml";
-const PLUGIN_PATH: &str = "target/libs";
+static CONF_FILE:   LazyLock<&'static str> = 
+	LazyLock::new(|| std::env::var("CONF_FILE")
+		.map(|s| &*Box::leak(s.into_boxed_str()))
+		.unwrap_or("config.toml"));
+
+static PLUGIN_PATH: LazyLock<&'static str> = 
+	LazyLock::new(|| std::env::var("PLUGIN_PATH")
+		.map(|s| &*Box::leak(s.into_boxed_str()))
+		.unwrap_or("target/libs"));
 
 fn main() {
 	// list midi devices in terminal
@@ -40,9 +47,26 @@ fn main() {
 
 	let init = |a: &App| { 
 		let ms = Arc::new(Mutex::new(MutState {
-			plugins: loading::Plugin::load_dir(PLUGIN_PATH),
+			plugins: loading::Plugin::load_dir(*PLUGIN_PATH),
 			..Default::default()
 		}));
+
+		let ms_ = ms.clone();
+		struct EventHandler(Arc<Mutex<MutState>>);
+		impl notify::EventHandler for EventHandler {
+			fn handle_event(&mut self, event: notify::Result<notify::Event>) {
+				let mut ms = self.0.lock().unwrap();
+				match event {
+					Ok(event) if event.kind.is_modify() =>
+						ms.plugins = loading::Plugin::load_dir(*PLUGIN_PATH) ,
+					Ok(_)  => (),
+					Err(e) => eprintln!("watch error: {:?}", e),
+				}
+			}
+		}
+
+		notify::recommended_watcher(EventHandler(ms_)).unwrap();
+
 
 		let mut audio = audio::Audio::init().unwrap();
 		let sample_rate = audio.sample_rate();
@@ -92,33 +116,7 @@ fn main() {
 			.key_released(key_released)
 			.build().unwrap(); 
 
-		State {
-			ms, sample_rate,
-			// funcs: &[
-			// 	|y, x, t, _, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2func
-			// 	|y, x, t, _, _| x / y * t, // wavesfunc
-			// 	|y, x, t, _, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solidfunc
-			// 	|y, x, t, fft_data, _| { // audiofunc
-			//
-			// 		// magnitudes are huge coming from fft_data
-			// 		// lets make it a usable number for our situation
-			// 		// can noise clamp be controllable?
-			// 		const NOISE_CLAMP: f32 = 10.0;
-			// 		const FREQ_AVERAGE: f32 = 500.0;
-			// 		const MAG_DIVISOR: f32 = 1000000.0;
-			//
-			// 		let mut magthing = fft_data.iter()
-			// 			.map(|&(f, m)| (f, m / MAG_DIVISOR))
-			// 			.find(|&(f, _)| f >= FREQ_AVERAGE)
-			// 			.and_then(|(_, m)| (m > NOISE_CLAMP).then_some(m))
-			// 			.unwrap_or(0.0);
-			//
-			// 		// can't get around the noise - not sure what to do with this yet
-			// 		if magthing < 101.0 { magthing = 0.0 }
-			// 		(y - magthing) * (x + magthing) * t / 100.0
-			// 	}
-			// ],
-		}
+		State { ms, sample_rate }
 	};
 
 	nannou::app(init).run();
@@ -134,19 +132,25 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
+
+	let set_active_func = |mut ms: MutexGuard<MutState>, n| match ms.plugins.len().cmp(&n) {
+		std::cmp::Ordering::Less => eprintln!("plugin {n} not loaded"),
+		_ => ms.active_func = n,
+	};
+
 	match key {
 		Key::R => ms.is_reset = true,
 
-		Key::Key1 => ms.active_func = 0,
-		Key::Key2 => ms.active_func = 1,
-		Key::Key3 => ms.active_func = 2,
-		Key::Key4 => ms.active_func = 3,
-		Key::Key5 => ms.active_func = 4,
-		Key::Key6 => ms.active_func = 5,
-		Key::Key7 => ms.active_func = 6,
-		Key::Key8 => ms.active_func = 7,
-		Key::Key9 => ms.active_func = 8,
-		Key::Key0 => ms.active_func = 9,
+		Key::Key1 => set_active_func(ms, 0),
+		Key::Key2 => set_active_func(ms, 1),
+		Key::Key3 => set_active_func(ms, 2),
+		Key::Key4 => set_active_func(ms, 3),
+		Key::Key5 => set_active_func(ms, 4),
+		Key::Key6 => set_active_func(ms, 5),
+		Key::Key7 => set_active_func(ms, 6),
+		Key::Key8 => set_active_func(ms, 7),
+		Key::Key9 => set_active_func(ms, 8),
+		Key::Key0 => set_active_func(ms, 9),
 
 		Key::Up    if ms.current_intensity < 255.0 => ms.current_intensity += 1.0,
 		Key::Down  if ms.current_intensity > 0.0   => ms.current_intensity -= 1.0,
@@ -170,10 +174,12 @@ fn view(app: &App, s: &State, frame: Frame) {
 	).unwrap();
 
 
-	let fft = unsafe { Vec::from_raw_parts(
-		fft_data.data().as_ptr() as *mut (f32, f32),
-		fft_data.data().len(),
-		fft_data.data().len()) };
+	let fft = unsafe { 
+		Vec::from_raw_parts(
+			fft_data.data().as_ptr() as *mut (f32, f32),
+			fft_data.data().len(),
+			fft_data.data().len()) 
+	};
 	std::mem::forget(fft_data);
 
 

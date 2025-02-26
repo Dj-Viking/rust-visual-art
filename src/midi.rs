@@ -22,11 +22,10 @@ impl Midi {
 	pub fn new(pm_ctx: &portmidi::PortMidi) -> Result<Self, Box<dyn std::error::Error>> {
 		let devices = pm_ctx.devices()?;
 		let mut config: HashMap<String, DConfig> = 
-			toml::from_str(&std::fs::read_to_string(crate::CONF_FILE).unwrap()).unwrap_or_else(|e| {
+			toml::from_str(&std::fs::read_to_string(*crate::CONF_FILE).unwrap()).unwrap_or_else(|e| {
 				eprintln!("Error reading config file: {e}");
 				std::process::exit(1);
 			});
-
 
 		let dev = devices.into_iter()
 			.find(|d| 
