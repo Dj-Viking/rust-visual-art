@@ -3,10 +3,13 @@
 use portmidi::PortMidi;
 use nannou::prelude::*;
 
-use spectrum_analyzer::windows::hann_window;
-use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit};
-use spectrum_analyzer::{FrequencySpectrum};
-use spectrum_analyzer::scaling::divide_by_N_sqrt;
+use spectrum_analyzer::{
+	FrequencySpectrum,
+	samples_fft_to_spectrum, 
+	FrequencyLimit,
+	scaling::divide_by_N_sqrt,
+	windows::hann_window
+};
 
 use std::sync::{Arc, Mutex};
 
