@@ -42,7 +42,7 @@ impl Midi {
 		println!("chan {} - intensity {}", channel, intensity);
 
 		let max_intensity_range = match ms.func {
-			ActiveFunc::Solid | ActiveFunc::Waves => 100.0,
+			ActiveFunc::V2 | ActiveFunc::Solid | ActiveFunc::Waves => 100.0,
 			_ => 0.01,
 		};
 

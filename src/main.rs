@@ -29,7 +29,7 @@ enum ActiveFunc {
 
 struct State {
 	#[allow(clippy::type_complexity)]
-	funcs:       &'static [fn(f32, f32, f32, &FrequencySpectrum, f32) -> f32],
+	funcs:       &'static [fn(f32, f32, f32, &FrequencySpectrum) -> f32],
 	ms:          Arc<Mutex<MutState>>,
 	sample_rate: u32,
 }
@@ -134,11 +134,11 @@ fn main() {
 		State {
 			ms, sample_rate,
 			funcs: &[
-				|y, x, t, _, _| y * x * t, // spiralfunc
-				|y, x, t, _, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2func
-				|y, x, t, _, _| x / y * t, // wavesfunc
-				|y, x, t, _, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solidfunc
-				|y, x, t, fft_data, _| { // audiofunc
+				|y, x, t, _| y * x * t, // spiralfunc
+				|y, x, t, _| 32.0 / (t / x) + y / (x / y - 1.0 / t) + t * (y * 0.05), // v2func
+				|y, x, t, _| x / y * t, // wavesfunc
+				|y, x, t, _| (x % 2.0 + 1000.0) / (y % 2.0 + 1000.0) * (t), // solidfunc
+				|y, x, t, fft_data| { // audiofunc
 
 					// magnitudes are huge coming from fft_data
 					// lets make it a usable number for our situation
@@ -228,6 +228,16 @@ fn view(app: &App, s: &State, frame: Frame) {
 	//println!("length of fft data stuff {}", fft_data.data().iter().len());
 	static mut TIME: f32 = 0.0;
 
+	//println!("time {}", unsafe { TIME });
+
+	// hit upper limit? go in reverse
+	//524288
+	const UPPER_TIME_LIMIT: f32 = 524288.0;
+	const LOWER_TIME_LIMIT: f32 = -524288.0;
+	if unsafe { TIME >= UPPER_TIME_LIMIT || TIME <= LOWER_TIME_LIMIT } {
+		ms.is_backwards = !ms.is_backwards;
+	}
+
 	let time_divisor = match ms.func {
 		ActiveFunc::Waves | ActiveFunc::Solid => 1000.0,
 		_ => 1000000000.0,
@@ -256,7 +266,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(time_divisor + 100000.0 * (ms.time_dialation / 10.0))
 			+ ms.current_intensity / 100.0;
 
-		let val = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &fft, time_divisor);
+		let val = s.funcs[ms.func as u8 as usize](r.y(), r.x(), t, &fft);
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(val, 1.0, 0.5);
