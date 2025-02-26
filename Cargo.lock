@@ -1822,6 +1822,7 @@ name = "rust-tui-example"
 version = "0.1.0"
 dependencies = [
  "byteorder",
+ "libloading 0.8.6",
  "nannou",
  "portmidi",
  "pulseaudio",
