@@ -47,7 +47,11 @@ fn main() {
 
 	let init = |a: &App| { 
 		let ms = Arc::new(Mutex::new(MutState {
-			plugins: loading::Plugin::load_dir(*PLUGIN_PATH),
+			plugins: { 
+				let mut p = Vec::new(); 
+				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p); 
+				p
+			},
 			..Default::default()
 		}));
 
@@ -56,17 +60,23 @@ fn main() {
 		impl notify::EventHandler for EventHandler {
 			fn handle_event(&mut self, event: notify::Result<notify::Event>) {
 				let mut ms = self.0.lock().unwrap();
+				println!("fat ass println {:?}", event);
 				match event {
-					Ok(event) if event.kind.is_modify() =>
-						ms.plugins = loading::Plugin::load_dir(*PLUGIN_PATH) ,
+					Ok(event) if event.kind.is_modify() => {
+						ms.plugins.clear();
+						loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
+					},
 					Ok(_)  => (),
 					Err(e) => eprintln!("watch error: {:?}", e),
 				}
 			}
 		}
 
-		notify::recommended_watcher(EventHandler(ms_)).unwrap();
+		use notify::Watcher;
 
+		notify::inotify::INotifyWatcher::new(EventHandler(ms_), notify::Config::default())
+			.unwrap()
+			.watch(std::path::Path::new(*PLUGIN_PATH), notify::RecursiveMode::Recursive);
 
 		let mut audio = audio::Audio::init().unwrap();
 		let sample_rate = audio.sample_rate();
@@ -230,7 +240,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		if ms.is_reset { unsafe { TIME = 0.0; } }
 		
 		let t = unsafe { TIME } /
-			(1000100000.0 * (ms.time_dialation / 10.0))
+			(1000000000.0 + 100000.0 * (ms.time_dialation / 10.0))
 			+ ms.current_intensity / 100.0;
 
 		let val = ms.plugins[ms.active_func].call(r.y(), r.x(), t, &fft);
