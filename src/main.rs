@@ -214,12 +214,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 	// 	ms.is_backwards = !ms.is_backwards;
 	// }
 
-	// FIXME
-	// let time_divisor = match ms.func {
-	// 	ActiveFunc::Waves | ActiveFunc::Solid => 1000.0,
-	// 	_ => ,
-	// };
-
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
@@ -240,7 +234,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		if ms.is_reset { unsafe { TIME = 0.0; } }
 		
 		let t = unsafe { TIME } /
-			(1000000000.0 + 100000.0 * (ms.time_dialation / 10.0))
+			(ms.plugins[ms.active_func].time_divisor + 100000.0 * (ms.time_dialation / 10.0))
 			+ ms.current_intensity / 100.0;
 
 		let val = ms.plugins[ms.active_func].call(r.x(), r.y(),  t, &fft);
