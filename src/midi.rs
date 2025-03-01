@@ -46,18 +46,16 @@ impl Midi {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
-		// FIXME
-		// let max_intensity_range = match ms.func {
-		// 	ActiveFunc::Solid | ActiveFunc::Waves => 100.0,
-		// 	_ => 0.01,
-		// };
+		let lerp = |range| lerp_float(intensity, 0.0, range, 0, 127);
+
+		println!("range shit {}", ms.plugins[ms.active_func].intensity_range);
 
 		match channel {
 			c if c == self.cfg.backwards => ms.is_backwards = !ms.is_backwards,
 
-			c if c == self.cfg.intensity      => ms.current_intensity = lerp_float(intensity, 0.0, 100.0, 0, 127),
-			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp_float(intensity, 0.0, 1.0, 0, 127),
-			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp_float(intensity, 0.0, 100.0, 0, 127),
+			c if c == self.cfg.intensity      => ms.current_intensity = lerp(ms.plugins[ms.active_func].intensity_range),
+			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp(1.0),
+			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp(100.0),
 			_ if intensity == 0 => (),
 
 			c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,
