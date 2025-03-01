@@ -48,8 +48,6 @@ impl Midi {
 
 		let lerp = |range| lerp_float(intensity, 0.0, range, 0, 127);
 
-		println!("range shit {}", ms.plugins[ms.active_func].intensity_range);
-
 		match channel {
 			c if c == self.cfg.backwards => ms.is_backwards = !ms.is_backwards,
 
