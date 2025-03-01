@@ -243,7 +243,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(1000000000.0 + 100000.0 * (ms.time_dialation / 10.0))
 			+ ms.current_intensity / 100.0;
 
-		let val = ms.plugins[ms.active_func].call(r.y(), r.x(), t, &fft);
+		let val = ms.plugins[ms.active_func].call(r.x(), r.y(),  t, &fft);
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(val, 1.0, 0.5);

@@ -1,5 +1,11 @@
 ["XONE:K2 "]
-fns = [24, 25, 26, 27, 31]
+fns = [
+	24, # M Button 
+	25, # N Button 
+	26, # O Button 
+	27, # P Button 
+	31  # L Button 
+]
 intensity      = 16 # fader_1
 decay_factor   = 17 # fader_2
 time_dialation = 19 # fader_4
