@@ -53,7 +53,7 @@ impl Midi {
 
 			c if c == self.cfg.intensity      => ms.current_intensity = lerp(ms.plugins[ms.active_func].intensity_range),
 			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp(1.0),
-			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp(100.0),
+			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp(ms.plugins[ms.active_func].time_dialation_range),
 			_ if intensity == 0 => (),
 
 			c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,

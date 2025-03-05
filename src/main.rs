@@ -55,28 +55,6 @@ fn main() {
 			..Default::default()
 		}));
 
-		let ms_ = ms.clone();
-		struct EventHandler(Arc<Mutex<MutState>>);
-		impl notify::EventHandler for EventHandler {
-			fn handle_event(&mut self, event: notify::Result<notify::Event>) {
-				let mut ms = self.0.lock().unwrap();
-				println!("fat ass println {:?}", event);
-				match event {
-					Ok(event) if event.kind.is_modify() => {
-						ms.plugins.clear();
-						loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
-					},
-					Ok(_)  => (),
-					Err(e) => eprintln!("watch error: {:?}", e),
-				}
-			}
-		}
-
-		use notify::Watcher;
-
-		notify::inotify::INotifyWatcher::new(EventHandler(ms_), notify::Config::default())
-			.unwrap()
-			.watch(std::path::Path::new(*PLUGIN_PATH), notify::RecursiveMode::Recursive);
 
 		let mut audio = audio::Audio::init().unwrap();
 		let sample_rate = audio.sample_rate();
@@ -150,6 +128,11 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 
 	match key {
 		Key::R => ms.is_reset = true,
+		Key::L => {
+			println!("[INFO]: reloading plugins");
+			ms.plugins.clear();
+			loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
+		},
 
 		Key::Key1 => set_active_func(ms, 0),
 		Key::Key2 => set_active_func(ms, 1),
@@ -245,3 +228,4 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	draw.to_frame(app, &frame).unwrap();
 }
+

@@ -1,5 +1,5 @@
 #[unsafe(no_mangle)]
-pub static TIME_DIVISOR: f32 = 1000.0;
+pub static TIME_DIVISOR: f32 = 10000.0;
 
 #[unsafe(no_mangle)]
 pub static INTENSITY_RANGE: f32 = 100.0;
