@@ -25,7 +25,7 @@ impl Plugin {
 				.map(|lib| Self {
 					transform:            *unsafe { lib.get(b"transform").unwrap() },
 					time_divisor:          unsafe { lib.get(b"TIME_DIVISOR").map_or(1000000000.0, |s: Symbol<*const f32>| **s) },
-					time_dialation_range:    unsafe { lib.get(b"TIME_DIALATION_RANGE").map_or(100.0, |s: Symbol<*const f32>| **s) },
+					time_dialation_range:  unsafe { lib.get(b"TIME_DIALATION_RANGE").map_or(100.0, |s: Symbol<*const f32>| **s) },
 					intensity_range:       unsafe { lib.get(b"INTENSITY_RANGE").map_or(0.01, |s: Symbol<*const f32>| **s) },
 					_lib: lib,
 				}));
