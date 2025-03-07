@@ -59,6 +59,45 @@ fn main() {
 		let mut audio = audio::Audio::init().unwrap();
 		let sample_rate = audio.sample_rate();
 
+		let ms_ = ms.clone();
+		let watch = move |path: &str| { 
+			let (tx, rx) = std::sync::mpsc::channel();
+
+			// Automatically select the best implementation for your platform.
+			// You can also access each implementation directly e.g. INotifyWatcher.
+			
+			use notify::Watcher;
+			let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+
+			// Add a path to be watched. All files and directories at that path and
+			// below will be monitored for changes.
+			watcher.watch(path.as_ref(), notify::RecursiveMode::Recursive).unwrap();
+
+			for res in rx {
+				match res {
+					Ok(event)  => {
+						println!("{:?}", event.kind);
+						if event.kind == notify::event::EventKind::Remove(
+							notify::event::RemoveKind::File
+						)
+						{
+							let mut ms = ms_.lock().unwrap();
+							println!("\n=========\nChange: {:?}", event.kind);
+							println!("[INFO]: reloading plugins");
+							ms.plugins.clear();
+							loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
+						}
+					},
+					Err(error) => println!("Error: {:?}", error),
+				}
+			}
+		};
+
+		std::thread::spawn(move || {
+			let path = "target/libs";
+			watch(&path);
+		});
+
 		// audio stream thread
 		std::thread::spawn(move || {
 			loop {
