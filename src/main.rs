@@ -191,11 +191,11 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	static mut TIME: f32 = 0.0;
 
-	// const UPPER_TIME_LIMIT: f32 = 524288.0;
-	// const LOWER_TIME_LIMIT: f32 = -524288.0;
-	// if unsafe { TIME >= UPPER_TIME_LIMIT || TIME <= LOWER_TIME_LIMIT } {
-	// 	ms.is_backwards = !ms.is_backwards;
-	// }
+	const UPPER_TIME_LIMIT: f32 = 524288.0;
+	const LOWER_TIME_LIMIT: f32 = -524288.0;
+	if unsafe { TIME >= UPPER_TIME_LIMIT || TIME <= LOWER_TIME_LIMIT } {
+		ms.is_backwards = !ms.is_backwards;
+	}
 
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
