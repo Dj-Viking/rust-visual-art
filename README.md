@@ -10,6 +10,8 @@ that control the visuals
 NOTE: requires cargo watch - install with `cargo install cargo-watch`
 ```sh
 cargo watch -w lib -x 'r --manifest-path build_script/Cargo.toml'
+# or
+sh watch.sh
 ```
 
 ## midi
