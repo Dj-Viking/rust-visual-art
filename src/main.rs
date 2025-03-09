@@ -36,7 +36,10 @@ static PLUGIN_PATH: LazyLock<&'static str> =
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("target/libs"));
 
+static mut PLUGS_COUNT: u8 = 0;
+
 fn main() {
+
 	// list midi devices in terminal
 	if std::env::args().skip(1).any(|a| a == "list") {
 		let pm_ctx = PortMidi::new().unwrap();
@@ -44,6 +47,18 @@ fn main() {
 		devices.iter().for_each(|d| println!("{} {:?} {:?}", d.id(), d.name(), d.direction()));
 		std::process::exit(0);
 	}
+
+	// get the amount of plugins as part of knowing when to reload them 
+	// when the watcher detects changes
+	if let Ok(entries) = std::fs::read_dir(&*PLUGIN_PATH) {
+		for entry in entries {
+			if let Ok(_) = entry {
+				unsafe { PLUGS_COUNT += 1 };
+			}
+		}
+	}
+
+	println!("plug count {}", unsafe { PLUGS_COUNT });
 
 	let init = |a: &App| { 
 		let ms = Arc::new(Mutex::new(MutState {
@@ -60,32 +75,42 @@ fn main() {
 		let sample_rate = audio.sample_rate();
 
 		let ms_ = ms.clone();
-		let watch = move |path: &str| { 
+		let watch = move |path: &str| {
 			let (tx, rx) = std::sync::mpsc::channel();
 
-			// Automatically select the best implementation for your platform.
-			// You can also access each implementation directly e.g. INotifyWatcher.
-			
 			use notify::Watcher;
 			let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
 
 			// Add a path to be watched. All files and directories at that path and
 			// below will be monitored for changes.
-			watcher.watch(path.as_ref(), notify::RecursiveMode::Recursive).unwrap();
+			// ....nonrecursive does the same thing as recursive but whatever....
+			watcher.watch(path.as_ref(), notify::RecursiveMode::NonRecursive).unwrap();
 
+			let mut event_count = 0;
 			for res in rx {
 				match res {
-					Ok(event)  => {
-						println!("{:?}", event.kind);
+					Ok(event) => {
 						if event.kind == notify::event::EventKind::Remove(
 							notify::event::RemoveKind::File
-						)
-						{
-							let mut ms = ms_.lock().unwrap();
-							println!("\n=========\nChange: {:?}", event.kind);
-							println!("[INFO]: reloading plugins");
-							ms.plugins.clear();
-							loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
+						) {
+							event_count += 1;
+
+							// wait for files to be fully removed 
+							// and recreated by the build script
+							// kind of a weird hack because an event is fired for each File
+							// in the plugin path but I need to wait for all the files
+							// to be replaced
+							if event_count == unsafe { PLUGS_COUNT * PLUGS_COUNT } {
+
+								let mut ms = ms_.lock().unwrap();
+
+								println!("\n=========\n watch event: {:?}", event.kind);
+
+								println!("[INFO]: reloading plugins");
+								ms.plugins.clear();
+								loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
+								event_count = 0;
+							}
 						}
 					},
 					Err(error) => println!("Error: {:?}", error),
@@ -93,9 +118,9 @@ fn main() {
 			}
 		};
 
+		// watch plugin file changes
 		std::thread::spawn(move || {
-			let path = "target/libs";
-			watch(&path);
+			watch(&*PLUGIN_PATH);
 		});
 
 		// audio stream thread
@@ -167,11 +192,6 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 
 	match key {
 		Key::R => ms.is_reset = true,
-		Key::L => {
-			println!("[INFO]: reloading plugins");
-			ms.plugins.clear();
-			loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
-		},
 
 		Key::Key1 => set_active_func(ms, 0),
 		Key::Key2 => set_active_func(ms, 1),
@@ -205,7 +225,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 		Some(&spectrum_analyzer::scaling::divide_by_N_sqrt)
 	).unwrap();
 
-
 	let fft = unsafe { 
 		Vec::from_raw_parts(
 			fft_data.data().as_ptr() as *mut (f32, f32),
@@ -214,11 +233,10 @@ fn view(app: &App, s: &State, frame: Frame) {
 	};
 	std::mem::forget(fft_data);
 
-
 	// a pretty good decay factor
 	// controlled by midi but here for reference
 	// gives a slow smeary like feeling
-	const FACTOR: f32 = 0.9999;
+	const FACTOR: f32 = 0.99;
 	static mut PREV_FFT: Vec<(f32, f32)> = Vec::new();
 
 	fft.iter().map(|(_, m)| m)
@@ -226,7 +244,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 		.for_each(|(c, p)| 
 			if *c > *p { *p = *c; } 
 			else { *p *= FACTOR; });
-
 
 	static mut TIME: f32 = 0.0;
 
