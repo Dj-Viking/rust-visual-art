@@ -1,6 +1,15 @@
 fn main() {
-	let _ = std::fs::remove_dir_all("target/libs");
-	std::fs::create_dir_all("target/libs").unwrap();
+
+	const LIBS_PATH: &str = "target/libs";
+
+	if let Ok(entries) = std::fs::read_dir(LIBS_PATH) {
+		for entry in entries {
+			if let Ok(entry) = entry {
+				println!("remove {:?}", entry.path());
+				std::fs::remove_file(entry.path()).unwrap();
+			}
+		}
+	}
 	
 	std::fs::read_dir("lib").unwrap()
 		.filter_map(Result::ok)
