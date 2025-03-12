@@ -6,7 +6,15 @@ pub struct Plugin {
 	pub time_divisor: f32,
 	pub time_dialation_range: f32,
 	pub intensity_range: f32,
-	transform: unsafe extern "C" fn(f32, f32, f32, *const std::ffi::c_void, freq_len: usize) -> f32,
+	transform: unsafe extern "C" fn(
+		x:           f32,                     // x 
+		y:           f32,                     // y 
+		t:           f32,                     // t 
+		fft:         *const std::ffi::c_void, // vec
+		fft_len:     usize,                   // vec len
+		fft_buf:     *const std::ffi::c_void, // buf
+		fft_buf_len: usize                    // buf len
+	) -> f32
 }
 
 impl Plugin {
@@ -31,7 +39,17 @@ impl Plugin {
 				}));
 	}
 
-	pub fn call(&self, x: f32, y: f32, t: f32, fft: &[(f32, f32)]) -> f32 {
-		unsafe { (self.transform)(x, y, t, fft.as_ptr() as *const std::ffi::c_void, fft.len()) }
+	pub fn call(&self, 
+		x: f32, y: f32, t: f32, 
+		fft:     &[(f32, f32)], 
+		fft_buf: &[f32; 69]
+	) -> f32 {
+		unsafe { (self.transform)(
+			x, y, t, 
+			fft.as_ptr() as *const std::ffi::c_void, 
+			fft.len(),
+			fft_buf.as_ptr() as *const std::ffi::c_void,
+			fft_buf.len()
+		) }
 	}
 }

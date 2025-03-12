@@ -233,18 +233,19 @@ fn view(app: &App, s: &State, frame: Frame) {
 	};
 	std::mem::forget(fft_data);
 
-	// a pretty good decay factor
-	// controlled by midi but here for reference
-	// gives a slow smeary like feeling
-	const FACTOR: f32 = 0.99;
-	static mut PREV_FFT: Vec<(f32, f32)> = Vec::new();
+	let mut fft_buf = [0.0; 69];
 
-	fft.iter().map(|(_, m)| m)
-		.zip(unsafe { PREV_FFT.iter_mut().map(|(_, m)| m) })
-		.for_each(|(c, p)| 
+	// a pretty good decay factor
+	// can be controlled by midi but here for reference
+	// should give a slow smeary like feeling
+	const FACTOR: f32 = 0.99;
+
+	// apply the smoothed values to the fft_buf
+	fft.iter().map(|(_, x)| x)
+		.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
 			if *c > *p { *p = *c; } 
 			else { *p *= FACTOR; });
-
+	
 	static mut TIME: f32 = 0.0;
 
 	const UPPER_TIME_LIMIT: f32 = 524288.0;
@@ -276,7 +277,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(ms.plugins[ms.active_func].time_divisor + 100000.0 * (ms.time_dialation / 10.0))
 			+ ms.current_intensity / 100.0;
 
-		let val = ms.plugins[ms.active_func].call(r.x(), r.y(),  t, &fft);
+		let val = ms.plugins[ms.active_func].call(r.x(), r.y(),  t, &fft, &fft_buf);
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(val, 1.0, 0.5);
