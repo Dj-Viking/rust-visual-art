@@ -238,7 +238,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 	// a pretty good decay factor
 	// can be controlled by midi but here for reference
 	// should give a slow smeary like feeling
-	const FACTOR: f32 = 0.99;
+	const FACTOR: f32 = 0.9999;
 
 	// apply the smoothed values to the fft_buf
 	fft.iter().map(|(_, x)| x)

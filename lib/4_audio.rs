@@ -18,7 +18,8 @@ pub extern "C" fn transform(
 	// magnitudes are huge coming from fft_data
 	// lets make it a usable number for our situation
 	// can noise clamp be controllable?
-	const LOWER_LIMIT: f32 = 200.0;
+	const LOW_LOWER_LIMIT: f32 = 340.0;
+	const HI_LOWER_LIMIT: f32 = 500.0;
 	const MIDLOW_LIMIT: f32 = 1000.0;
 	const MIDHI_LIMIT: f32 = 5000.0;
 	const HI_LIMIT: f32 = 8000.0;
@@ -28,39 +29,50 @@ pub extern "C" fn transform(
 	let mut mid_mag: f32 = 0.0;
 	let mut hi_mag: f32 = 0.0;
 
-	// let mut low_mag = fft.iter()
-	// 	.map(|&(f, m)| (f, m / MAG_DIVISOR))
-	// 	.find(|&(f, _)| f >= FREQ_AVERAGE)
-	// 	.and_then(|(_, m)| (m > NOISE_CLAMP).then_some(m))
-	// 	.unwrap_or(0.0);
-
 	// still not sure what I'm doing here yet....
 	for (f, (_, m)) in fft.iter().map(|(f, _)| f).zip(fft_buf.iter()) {
-		 //println!("mag of {f} {}", m / 100000.0);
-		// println!("{f:.2}Hz => {}", "|".repeat(((m * f).sqrt() / 10000.0) as usize));
-	
-		// if *f <= 7000.0 && *f >= 6000.0 {
 
-		// println!("{}", m / 10000000.0);
+
 		// low
-		if *f >= 340.0 && *f <= 500.0
-		{ 
-			// println!("{f}");
-			// let calc = m / 10000000.0;
-			// if calc >= NOISE_CLAMP  {
-			// }
+		if low_mag == 0.0 {
+			if *f >= 340.0 && *f <= 500.0
+			{ 
 				let mut val = (m * f).sqrt() / MAG_DIVISOR; 
-				val -= 30.0;	
+				val -= 400.0;	
 				
 
+				// if val < 0.0 { low_mag = 0.0 } else { 
+				// 	low_mag = val.floor();
+				// }
 				low_mag = val.floor();
-				// println!("{low_mag}");
-				break;
+				//println!("{low_mag}");
+				continue;
+			}
 		}
+
+		// mid
+		if mid_mag == 0.0 {
+			if *f >= MIDLOW_LIMIT && *f <= MIDHI_LIMIT 
+			{
+				let mut val = (m * f).sqrt() / MAG_DIVISOR; 
+				val -= 300.0;
+				
+
+				// if val < 0.0 { low_mag = 0.0 } else { 
+				// 	low_mag = val.floor();
+				// }
+				mid_mag = val.floor();
+				//println!("{low_mag}");
+				continue;
+
+			}
+		}
+
+		if low_mag != 0.0 && mid_mag != 0.0 { break; }
+
 	}
 
 	// can't get around the noise - not sure what to do with this yet
 	// if low_mag < 101.0 { low_mag = 0.0 }
-	(y - low_mag) * (x + low_mag) * t / 1.0
-	// (y) * (x) * (t)
+	(x % mid_mag / low_mag) * (y % (low_mag)) * (t * 10.0)
 }
