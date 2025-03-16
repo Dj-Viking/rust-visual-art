@@ -259,7 +259,8 @@ fn view(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
-		.flat_map(|r| r.subdivisions_iter()) {
+		.flat_map(|r| r.subdivisions_iter())
+	{
 
 		match ms.is_backwards {
 			true => unsafe { TIME -= app.duration.since_prev_update.as_secs_f32() },

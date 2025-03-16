@@ -38,7 +38,7 @@ impl Audio {
 		let version = std::cmp::min(version, auth_reply.version);
 
 		let mut props = ps::Props::new();
-		props.set(ps::Prop::ApplicationName, CString::new("poop").unwrap());
+		props.set(ps::Prop::ApplicationName, CString::new("rust-visual-art").unwrap());
 
 		ps::write_command_message(sock.get_mut(), 1, ps::Command::SetClientName(props), version)?;
 
