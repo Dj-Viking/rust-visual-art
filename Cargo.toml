@@ -5,18 +5,19 @@ edition = "2021"
 
 [dependencies]
 nannou = "0.19"
+nannou_audio = "0.19"
+ringbuf = "0.4"
 
 toml = "0.8"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 portmidi = "0.3"
 
-pulseaudio = "0.2"
 byteorder = "1.5"
 spectrum-analyzer = "1.6"
 
 libloading = "0.8"
-notify = "8.0.0"
+notify = "8.0"
 
 
 [profile.release]

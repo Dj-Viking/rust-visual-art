@@ -2,17 +2,32 @@
 #![feature(if_let_guard)]
 
 use portmidi::PortMidi;
+
 use nannou::prelude::*;
+use nannou_audio as audio;
+use nannou_audio::Buffer;
 
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
+use std::sync::mpsc::Sender;
+use std::thread::JoinHandle;
 
-mod audio;
+use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::HeapRb;
+
 mod midi;
 mod loading;
 
+struct InputModel {
+	producer: ringbuf::HeapProd<f32>,
+}
+struct OutputModel {
+	consumer: ringbuf::HeapCons<f32>,
+}
+
 struct State {
-	ms:          Arc<Mutex<MutState>>,
-	sample_rate: u32,
+	ms:           Arc<Mutex<MutState>>,
+	audio_thread: JoinHandle<()>,
+	audio_tx:     Sender<()>,
 }
 
 #[derive(Default)]
@@ -71,8 +86,43 @@ fn main() {
 		}));
 
 
-		let mut audio = audio::Audio::init().unwrap();
-		let sample_rate = audio.sample_rate();
+		let audio_host = audio::Host::new();
+
+		const LATENCY: usize = 2048;
+		let ringbuffer = HeapRb::<f32>::new(LATENCY * 2);
+
+		let (mut prod, cons) = ringbuffer.split();
+
+		for _ in 0..LATENCY {
+			prod.try_push(0.0).unwrap();
+		}
+
+		let (audio_tx, audio_rx) = std::sync::mpsc::channel();
+		let audio_thread = std::thread::spawn(move || {
+			let in_model = InputModel { producer: prod };
+			let in_stream = audio_host
+				.new_input_stream(in_model)
+				.capture(pass_in)
+				.build()
+				.unwrap();
+
+			let out_model = OutputModel { consumer: cons };
+			let out_stream = audio_host
+				.new_output_stream(out_model)
+				.render(pass_out)
+				.build()
+				.unwrap();
+
+			loop {
+				match audio_rx.recv() {
+					Ok(_) => {
+						in_stream.play().unwrap();
+						out_stream.play().unwrap();
+					},
+					Err(_) => break,
+				}
+			}
+		});
 
 		let ms_ = ms.clone();
 		let watch = move |path: &str| {
@@ -124,12 +174,12 @@ fn main() {
 		});
 
 		// audio stream thread
-		std::thread::spawn(move || {
-			loop {
-				std::thread::sleep(std::time::Duration::from_millis(1));
-				audio.read_stream().unwrap()
-			}
-		});
+		// std::thread::spawn(move || {
+		// 	loop {
+		// 		std::thread::sleep(std::time::Duration::from_millis(1));
+		// 		audio.read_stream().unwrap()
+		// 	}
+		// });
 
 		let ms_ = ms.clone();
 		if !std::env::args().skip(1).any(|a| a == "keys") {
@@ -168,10 +218,25 @@ fn main() {
 			.key_released(key_released)
 			.build().unwrap(); 
 
-		State { ms, sample_rate }
+		State { 
+			ms, 
+			audio_tx,
+			audio_thread
+		}
 	};
 
 	nannou::app(init).run();
+}
+
+fn pass_in(model: &mut InputModel, buffer: &Buffer) {
+	buffer.frames().for_each(|f| f.into_iter().for_each(|s| {
+		let _ = model.producer.try_push(*s);
+	}))
+}
+fn pass_out(model: &mut OutputModel, buffer: &mut Buffer) {
+	buffer.frames_mut().for_each(|f|
+		f.iter_mut().for_each(|s|
+			*s = model.consumer.try_pop().unwrap_or(0.0)))
 }
 
 fn key_released(_: &App, s: &mut State, key: Key) {
@@ -218,20 +283,22 @@ fn view(app: &App, s: &State, frame: Frame) {
 	draw.background().color(BLACK);
 	let mut ms = s.ms.lock().unwrap();
 
-	let fft_data = spectrum_analyzer::samples_fft_to_spectrum(
-		&spectrum_analyzer::windows::hann_window(unsafe { &audio::SAMPLEBUF }),
-		s.sample_rate,
-		spectrum_analyzer::FrequencyLimit::Range(50.0, 12000.0),
-		Some(&spectrum_analyzer::scaling::divide_by_N_sqrt)
-	).unwrap();
-
-	let fft = unsafe { 
-		Vec::from_raw_parts(
-			fft_data.data().as_ptr() as *mut (f32, f32),
-			fft_data.data().len(),
-			fft_data.data().len()) 
-	};
-	std::mem::forget(fft_data);
+	// let fft_data = spectrum_analyzer::samples_fft_to_spectrum(
+	// 	&spectrum_analyzer::windows::hann_window(unsafe { &audio::SAMPLEBUF }),
+	// 	s.sample_rate,
+	// 	spectrum_analyzer::FrequencyLimit::Range(50.0, 12000.0),
+	// 	Some(&spectrum_analyzer::scaling::divide_by_N_sqrt)
+	// ).unwrap();
+	//
+	// let fft = unsafe { 
+	// 	Vec::from_raw_parts(
+	// 		fft_data.data().as_ptr() as *mut (f32, f32),
+	// 		fft_data.data().len(),
+	// 		fft_data.data().len()) 
+	// };
+	// std::mem::forget(fft_data);
+	
+	let fft = [(0.0, 0.0); 1024];
 
 	let mut fft_buf = [0.0; 69];
 
@@ -241,10 +308,10 @@ fn view(app: &App, s: &State, frame: Frame) {
 	const FACTOR: f32 = 0.9999;
 
 	// apply the smoothed values to the fft_buf
-	fft.iter().map(|(_, x)| x)
-		.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
-			if *c > *p { *p = *c; } 
-			else { *p *= FACTOR; });
+	// fft.iter().map(|(_, x)| x)
+	// 	.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
+	// 		if *c > *p { *p = *c; } 
+	// 		else { *p *= FACTOR; });
 	
 	static mut TIME: f32 = 0.0;
 

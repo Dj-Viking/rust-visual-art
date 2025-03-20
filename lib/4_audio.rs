@@ -44,7 +44,7 @@ pub extern "C" fn transform(
 				// }
 
 				low_mag = val;
-				println!("{low_mag}");
+				//println!("{low_mag}");
 
 				continue;
 			}
