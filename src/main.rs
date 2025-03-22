@@ -8,11 +8,14 @@ use nannou_audio as audio;
 use nannou_audio::Buffer;
 
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
-use std::sync::mpsc::Sender;
-use std::thread::JoinHandle;
 
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::HeapRb;
+
+use rustfft::{Fft, FftPlanner};
+use rustfft::num_complex::Complex;
+
+use std::cmp::Ordering;
 
 mod midi;
 mod loading;
@@ -24,16 +27,76 @@ struct OutputModel {
 	consumer: ringbuf::HeapCons<f32>,
 }
 
+struct AudioProcessor {
+	pub buffer: Vec<f32>,
+	pub buffer_size: usize,
+	fft: Arc<dyn Fft<f32>>,
+}
+impl AudioProcessor {
+	fn new(sample_rate: usize, frame_rate: f32) -> Self {
+		let buffer_size = (sample_rate as f32 / frame_rate).ceil() as usize;
+		let mut planner: FftPlanner<f32> = FftPlanner::new();
+		let fft = planner.plan_fft_forward(buffer_size);
+
+		Self {
+			buffer: vec![0.0; buffer_size],
+			buffer_size,
+			fft,
+		}
+	}
+
+	fn add_samples(&mut self, samples: &[f32]) {
+		self.buffer.extend_from_slice(samples);
+
+		// deal with possible race condition of the sketch
+		// update happening and requesting data before buffer is full.
+		// fft buffer may be too small before processing it
+		match self.buffer.len().cmp(&self.buffer_size) {
+			Ordering::Greater => {
+				self.buffer.drain(0..(self.buffer.len() - self.buffer_size));
+			},
+			Ordering::Less => {
+				while self.buffer.len() < self.buffer_size {
+					self.buffer.push(0.0);
+				}
+			},
+			_ => {},
+		}
+	}
+
+	fn get_magnitudes(&self) -> Vec<f32> {
+
+		// TODO: add smoothing factor to the buffer samples
+		// before creating complex input
+
+		let mut complex_input: Vec<Complex<f32>> = 
+			self.buffer.iter()
+			.map(|&x| Complex::new(x, 0.0)).collect();
+
+		self.fft.process(&mut complex_input);
+
+		let mags = complex_input
+			.iter().map(|c| {
+				let mag = c.norm() / complex_input.len() as f32;
+				20.0 * (mag.max(1e-8)).log10()
+			})
+			.collect::<Vec<f32>>();
+
+		mags
+	}
+}
+
 struct State {
-	ms:           Arc<Mutex<MutState>>,
-	audio_thread: JoinHandle<()>,
-	audio_tx:     Sender<()>,
+	ms:              Arc<Mutex<MutState>>,
+	consumer:        ringbuf::HeapCons<f32>,
+	audio_processor: Arc<Mutex<AudioProcessor>>,
 }
 
 #[derive(Default)]
 struct MutState {
 	is_backwards:      bool,
 	is_reset:          bool,
+	is_fft:            bool,
 	current_intensity: f32,
 	time_dialation:    f32,
 	decay_factor:      f32,
@@ -51,8 +114,9 @@ static PLUGIN_PATH: LazyLock<&'static str> =
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("target/libs"));
 
-static mut PLUGS_COUNT: u8 = 0;
 
+const SAMPLES: usize = 4096;
+static mut PLUGS_COUNT: u8 = 0;
 fn main() {
 
 	// list midi devices in terminal
@@ -82,23 +146,33 @@ fn main() {
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p); 
 				p
 			},
+			is_fft: false,
 			..Default::default()
 		}));
 
 
 		let audio_host = audio::Host::new();
 
-		const LATENCY: usize = 2048;
-		let ringbuffer = HeapRb::<f32>::new(LATENCY * 2);
+		let input_config = audio_host
+			.default_input_device().unwrap()
+			.default_input_config().unwrap();
+		println!("default input {:#?}", 
+			input_config);
+
+		let audio_processor = Arc::new(Mutex::new(
+			AudioProcessor::new(
+				input_config.sample_rate().0 as usize, 
+				60.0)));
+
+		let ringbuffer = HeapRb::<f32>::new(SAMPLES * 2);
 
 		let (mut prod, cons) = ringbuffer.split();
 
-		for _ in 0..LATENCY {
+		for _ in 0..SAMPLES {
 			prod.try_push(0.0).unwrap();
 		}
 
-		let (audio_tx, audio_rx) = std::sync::mpsc::channel();
-		let audio_thread = std::thread::spawn(move || {
+		std::thread::spawn(move || {
 			let in_model = InputModel { producer: prod };
 			let in_stream = audio_host
 				.new_input_stream(in_model)
@@ -106,21 +180,16 @@ fn main() {
 				.build()
 				.unwrap();
 
-			let out_model = OutputModel { consumer: cons };
-			let out_stream = audio_host
-				.new_output_stream(out_model)
-				.render(pass_out)
-				.build()
-				.unwrap();
+			// let out_model = OutputModel { consumer: cons_, ap: ap__ };
+			// let out_stream = audio_host
+			// 	.new_output_stream(out_model)
+			// 	.render(pass_out)
+			// 	.build()
+			// 	.unwrap();
 
 			loop {
-				match audio_rx.recv() {
-					Ok(_) => {
-						in_stream.play().unwrap();
-						out_stream.play().unwrap();
-					},
-					Err(_) => break,
-				}
+				in_stream.play().unwrap();
+				// out_stream.play().unwrap();
 			}
 		});
 
@@ -173,13 +242,6 @@ fn main() {
 			watch(&*PLUGIN_PATH);
 		});
 
-		// audio stream thread
-		// std::thread::spawn(move || {
-		// 	loop {
-		// 		std::thread::sleep(std::time::Duration::from_millis(1));
-		// 		audio.read_stream().unwrap()
-		// 	}
-		// });
 
 		let ms_ = ms.clone();
 		if !std::env::args().skip(1).any(|a| a == "keys") {
@@ -220,23 +282,36 @@ fn main() {
 
 		State { 
 			ms, 
-			audio_tx,
-			audio_thread
+			consumer: cons,
+			audio_processor,
 		}
 	};
 
-	nannou::app(init).run();
+	nannou::app(init)
+		.update(update)
+		.run();
 }
 
-fn pass_in(model: &mut InputModel, buffer: &Buffer) {
-	buffer.frames().for_each(|f| f.into_iter().for_each(|s| {
-		let _ = model.producer.try_push(*s);
-	}))
+fn pass_in(model: &mut InputModel, buffer: &Buffer) -> () {
+
+	buffer.frames().for_each(|f| {
+		f.into_iter().for_each(|s| {
+			let _ = model.producer.try_push(*s);
+		});
+	});
+
 }
-fn pass_out(model: &mut OutputModel, buffer: &mut Buffer) {
-	buffer.frames_mut().for_each(|f|
-		f.iter_mut().for_each(|s|
-			*s = model.consumer.try_pop().unwrap_or(0.0)))
+
+// only if you want to hear the audio output back into the
+// device
+#[allow(unused)]
+fn pass_out(model: &mut OutputModel, buffer: &mut Buffer) -> () {
+
+	buffer.frames_mut().for_each(|f| {
+		f.iter_mut().for_each(|s| {
+			*s = model.consumer.try_pop().unwrap_or(0.0)
+		});
+	});
 }
 
 fn key_released(_: &App, s: &mut State, key: Key) {
@@ -278,35 +353,28 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	}
 }
 
+fn update(_app: &App, state: &mut State, _update: Update) {
+	let mut buffer = [0.0; 1024];
+	state.consumer.pop_slice(&mut buffer);
+	let mut ap = state.audio_processor.lock().unwrap();
+	ap.add_samples(&buffer);
+}
+
+
 fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
 	draw.background().color(BLACK);
 	let mut ms = s.ms.lock().unwrap();
+	let ap = s.audio_processor.lock().unwrap();
 
-	// let fft_data = spectrum_analyzer::samples_fft_to_spectrum(
-	// 	&spectrum_analyzer::windows::hann_window(unsafe { &audio::SAMPLEBUF }),
-	// 	s.sample_rate,
-	// 	spectrum_analyzer::FrequencyLimit::Range(50.0, 12000.0),
-	// 	Some(&spectrum_analyzer::scaling::divide_by_N_sqrt)
-	// ).unwrap();
-	//
-	// let fft = unsafe { 
-	// 	Vec::from_raw_parts(
-	// 		fft_data.data().as_ptr() as *mut (f32, f32),
-	// 		fft_data.data().len(),
-	// 		fft_data.data().len()) 
-	// };
-	// std::mem::forget(fft_data);
-	
-	let fft = [(0.0, 0.0); 1024];
-
-	let mut fft_buf = [0.0; 69];
+	let mags = ap.get_magnitudes();
 
 	// a pretty good decay factor
 	// can be controlled by midi but here for reference
 	// should give a slow smeary like feeling
-	const FACTOR: f32 = 0.9999;
+	// const FACTOR: f32 = 0.9999;
 
+	// TODO: smoothing somewhere??
 	// apply the smoothed values to the fft_buf
 	// fft.iter().map(|(_, x)| x)
 	// 	.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
@@ -320,7 +388,8 @@ fn view(app: &App, s: &State, frame: Frame) {
 	if unsafe { TIME >= UPPER_TIME_LIMIT || TIME <= LOWER_TIME_LIMIT } {
 		ms.is_backwards = !ms.is_backwards;
 	}
-
+	
+	let mut i = 0;
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
@@ -328,7 +397,10 @@ fn view(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
 	{
-
+		i += 1;
+		if i == mags.len() {
+			i = 0;
+		}
 		match ms.is_backwards {
 			true => unsafe { TIME -= app.duration.since_prev_update.as_secs_f32() },
 			_    => unsafe { TIME += app.duration.since_prev_update.as_secs_f32() },
@@ -345,10 +417,16 @@ fn view(app: &App, s: &State, frame: Frame) {
 			(ms.plugins[ms.active_func].time_divisor + 100000.0 * (ms.time_dialation / 10.0))
 			+ ms.current_intensity / 100.0;
 
-		let val = ms.plugins[ms.active_func].call(r.x(), r.y(),  t, &fft, &fft_buf);
+		let hue = ms.plugins[ms.active_func].call(r.x(), r.y(), t);
+
+		// TODO: dynamic value for luminance changed on a function?
+		// let sat = ms.plugins[ms.active_func].call(r.x(), r.y(), t, mags);
+		let sat = if ms.is_fft {
+			midi::lerp_float((mags[i] + 100.0).ceil() as u8, 0.0, 0.5, 0, 100)
+		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())
-			.hsl(val, 1.0, 0.5);
+			.hsl(hue, 1.0, sat);
 	}
 
 	draw.to_frame(app, &frame).unwrap();

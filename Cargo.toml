@@ -14,7 +14,7 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 portmidi = "0.3"
 
 byteorder = "1.5"
-spectrum-analyzer = "1.6"
+rustfft = "6.2"
 
 libloading = "0.8"
 notify = "8.0"

@@ -11,6 +11,7 @@ struct DConfig {
 	time_dialation: u8,
 	decay_factor:   u8,
 	reset:          u8,
+	is_fft:         u8,
 }
 
 pub struct Midi {
@@ -49,18 +50,24 @@ impl Midi {
 		let lerp = |range| lerp_float(intensity, 0.0, range, 0, 127);
 
 		match channel {
-			c if c == self.cfg.backwards => ms.is_backwards = !ms.is_backwards,
+
+			// latched boolean when condition matches
+			c if c == self.cfg.backwards && intensity == 127 => ms.is_backwards = !ms.is_backwards,
+			c if c == self.cfg.is_fft    && intensity == 127 => ms.is_fft       = !ms.is_fft,
 
 			c if c == self.cfg.intensity      => ms.current_intensity = lerp(ms.plugins[ms.active_func].intensity_range),
 			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp(1.0),
 			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp(ms.plugins[ms.active_func].time_dialation_range),
+
 			_ if intensity == 0 => (),
 
 			c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,
 			_ => (),
 		}
 
+		// momentary switch
 		ms.is_reset = channel == self.cfg.reset && intensity > 0;
+
 	}
 }
 
