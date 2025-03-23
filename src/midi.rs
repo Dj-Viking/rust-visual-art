@@ -10,6 +10,7 @@ struct DConfig {
 	intensity:      u8,
 	time_dialation: u8,
 	decay_factor:   u8,
+	sat_mod:        u8,
 	reset:          u8,
 	is_fft:         u8,
 }
@@ -58,6 +59,7 @@ impl Midi {
 			c if c == self.cfg.intensity      => ms.current_intensity = lerp(ms.plugins[ms.active_func].intensity_range),
 			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp(1.0),
 			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp(ms.plugins[ms.active_func].time_dialation_range),
+			c if c == self.cfg.sat_mod        => ms.sat_mod           = lerp(ms.plugins[ms.active_func].sat_mod),
 
 			_ if intensity == 0 => (),
 

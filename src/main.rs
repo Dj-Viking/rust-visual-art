@@ -100,6 +100,7 @@ struct MutState {
 	current_intensity: f32,
 	time_dialation:    f32,
 	decay_factor:      f32,
+	sat_mod:           f32,
 	plugins:           Vec<loading::Plugin>,
 	active_func:       usize,
 }
@@ -422,7 +423,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		// TODO: dynamic value for luminance changed on a function?
 		// let sat = ms.plugins[ms.active_func].call(r.x(), r.y(), t, mags);
 		let sat = if ms.is_fft {
-			midi::lerp_float((mags[i] + 100.0).ceil() as u8, 0.0, 0.5, 0, 100)
+			midi::lerp_float((mags[i] + ms.sat_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())
