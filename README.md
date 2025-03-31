@@ -73,10 +73,12 @@ And the effect parameters currently setup can be changed with the arrow keys
 ### audio
 
 The audio mechanism used in this project utilizes nannou_audio and took inspiration from [this example](https://github.com/nannou-org/nannou/blob/bevy-refactor/examples/audio/feedback.rs) 
-which Josh Batty kindly updated recently on the bevy-refactor branch of nannou.
+which Josh Batty kindly updated recently on the `bevy-refactor` branch of nannou.
 
-nannou_audio essentially which wraps around cpal under the hood
-which interestingly will use the "default" device of the user's system.
+As well as inspiration from Lokuas lattice project which makes use of audio reactivity [here](https://github.com/Lokua/lattice/blob/main/src/framework/audio.rs)
+
+nannou_audio essentially which wraps around `cpal` under the hood
+which interestingly **will use the "default"** device of the user's system.
 
 Which on my arch setup, the default device, is pipewire. But in order for the rest of my system to work normally I needed to adjust
 my setup slightly. 
@@ -91,7 +93,7 @@ Once that was all installed I needed to make sure everything was running properl
 configuring my system on startup to run `pipewire` `pipewire-pulse` and `wireplumber`.
 
 `rust-visual-art` will then start up and become a recording source appearing inside `pwvucontrol` and will receive input
-from whichever input device is set by the user as default. This is IMO much better than hard coding the device name into a code change.
+from whichever input device is **set by the user as default**. This is IMO much better than hard coding the device name into a code change.
 That way the user has control which device is sending input into the application.
 
 ---
