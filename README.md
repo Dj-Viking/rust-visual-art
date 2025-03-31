@@ -30,7 +30,7 @@ cargo run --release
 ## Dependencies
 ### midi
 
-For now, in order to build this project; 
+For now, in order to build and run this project; 
 you'll need to install the portmidi library through your package manager.
 
 I built this on arch linux so it would be like so:
