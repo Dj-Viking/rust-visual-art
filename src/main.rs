@@ -27,6 +27,17 @@ struct OutputModel {
 	consumer: ringbuf::HeapCons<f32>,
 }
 
+// these must be in the order of the file names
+#[derive(Debug, Clone)]
+#[repr(usize)]
+enum ActiveFunc {
+	Spiral = 0,
+	V2,
+	Waves,
+	Audio,
+	Solid
+}
+
 struct AudioProcessor {
 	pub buffer: Vec<f32>,
 	pub buffer_size: usize,
@@ -195,52 +206,10 @@ fn main() {
 		});
 
 		let ms_ = ms.clone();
-		let watch = move |path: &str| {
-			let (tx, rx) = std::sync::mpsc::channel();
-
-			use notify::Watcher;
-			let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
-
-			// Add a path to be watched. All files and directories at that path and
-			// below will be monitored for changes.
-			// ....nonrecursive does the same thing as recursive but whatever....
-			watcher.watch(path.as_ref(), notify::RecursiveMode::NonRecursive).unwrap();
-
-			let mut event_count = 0;
-			for res in rx {
-				match res {
-					Ok(event) => {
-						if event.kind == notify::event::EventKind::Remove(
-							notify::event::RemoveKind::File
-						) {
-							event_count += 1;
-
-							// wait for files to be fully removed 
-							// and recreated by the build script
-							// kind of a weird hack because an event is fired for each File
-							// in the plugin path but I need to wait for all the files
-							// to be replaced
-							if event_count == unsafe { PLUGS_COUNT * PLUGS_COUNT } {
-
-								let mut ms = ms_.lock().unwrap();
-
-								println!("\n=========\n watch event: {:?}", event.kind);
-
-								println!("[INFO]: reloading plugins");
-								ms.plugins.clear();
-								loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
-								event_count = 0;
-							}
-						}
-					},
-					Err(error) => println!("Error: {:?}", error),
-				}
-			}
-		};
 
 		// watch plugin file changes
 		std::thread::spawn(move || {
-			watch(&*PLUGIN_PATH);
+			watch(&*PLUGIN_PATH, &ms_);
 		});
 
 
@@ -326,24 +295,19 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 
-	let set_active_func = |mut ms: MutexGuard<MutState>, n| match ms.plugins.len().cmp(&n) {
-		std::cmp::Ordering::Less => eprintln!("plugin {n} not loaded"),
-		_ => ms.active_func = n,
+	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| match ms.plugins.len().cmp(&(n.clone() as usize)) {
+		std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
+		_ => ms.active_func = n as usize,
 	};
 
 	match key {
 		Key::R => ms.is_reset = true,
 
-		Key::Key1 => set_active_func(ms, 0),
-		Key::Key2 => set_active_func(ms, 1),
-		Key::Key3 => set_active_func(ms, 2),
-		Key::Key4 => set_active_func(ms, 3),
-		Key::Key5 => set_active_func(ms, 4),
-		Key::Key6 => set_active_func(ms, 5),
-		Key::Key7 => set_active_func(ms, 6),
-		Key::Key8 => set_active_func(ms, 7),
-		Key::Key9 => set_active_func(ms, 8),
-		Key::Key0 => set_active_func(ms, 9),
+		Key::Key1 => set_active_func(ms, ActiveFunc::Spiral),
+		Key::Key2 => set_active_func(ms, ActiveFunc::V2),
+		Key::Key3 => set_active_func(ms, ActiveFunc::Waves),
+		Key::Key4 => set_active_func(ms, ActiveFunc::Audio),
+		Key::Key5 => set_active_func(ms, ActiveFunc::Solid),
 
 		Key::Up    if ms.current_intensity < 255.0 => ms.current_intensity += 1.0,
 		Key::Down  if ms.current_intensity > 0.0   => ms.current_intensity -= 1.0,
@@ -423,7 +387,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		// TODO: dynamic value for luminance changed on a function?
 		// let sat = ms.plugins[ms.active_func].call(r.x(), r.y(), t, mags);
 		let sat = if ms.is_fft {
-			midi::lerp_float((mags[i] + ms.sat_mod).ceil() as u8, 0.01, 0.6, 0, 100)
+			lerp_float((mags[i] + ms.sat_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())
@@ -433,3 +397,56 @@ fn view(app: &App, s: &State, frame: Frame) {
 	draw.to_frame(app, &frame).unwrap();
 }
 
+fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
+	let (tx, rx) = std::sync::mpsc::channel();
+
+	use notify::Watcher;
+	let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+
+	// Add a path to be watched. All files and directories at that path and
+	// below will be monitored for changes.
+	// ....nonrecursive does the same thing as recursive but whatever....
+	watcher.watch(path.as_ref(), notify::RecursiveMode::NonRecursive).unwrap();
+
+	let mut event_count = 0;
+
+	for res in rx { match res {
+		Ok(event) => {
+			if event.kind == notify::event::EventKind::Remove(
+				notify::event::RemoveKind::File
+			) {
+				event_count += 1;
+
+				// wait for files to be fully removed 
+				// and recreated by the build script
+				// kind of a weird hack because an event is fired for each File
+				// in the plugin path but I need to wait for all the files
+				// to be replaced
+				if event_count == unsafe { PLUGS_COUNT * PLUGS_COUNT } {
+
+					let mut ms = ms_.lock().unwrap();
+
+					println!("\n=========\n watch event: {:?}", event.kind);
+
+					println!("[INFO]: reloading plugins");
+					ms.plugins.clear();
+					loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
+					event_count = 0;
+				}
+			}
+		},
+		Err(error) => println!("Error: {:?}", error),
+	} }
+}
+
+// output a number within a specific range from an entirely 
+pub fn lerp_float(
+    input:  u8,  // - input value to determine what position in the range the number sits
+    minout: f32, // - minimum percentage value
+    maxout: f32, // - maximum percentage value
+    minin:  u8,  // - minimum input value the range can be
+    maxin:  u8,  // - maximum input value the range can be
+) -> f32 {
+	(maxout - minout) * ((input - minin) as f32)
+	   / ((maxin - minin) as f32) + minout
+}

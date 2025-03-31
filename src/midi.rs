@@ -48,7 +48,7 @@ impl Midi {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
-		let lerp = |range| lerp_float(intensity, 0.0, range, 0, 127);
+		let lerp = |range| crate::lerp_float(intensity, 0.0, range, 0, 127);
 
 		match channel {
 
@@ -73,14 +73,3 @@ impl Midi {
 	}
 }
 
-// output a number within a specific range from an entirely 
-pub fn lerp_float(
-    input:  u8,  // - input value to determine what position in the range the number sits
-    minout: f32, // - minimum percentage value
-    maxout: f32, // - maximum percentage value
-    minin:  u8,  // - minimum input value the range can be
-    maxin:  u8,  // - maximum input value the range can be
-) -> f32 {
-	(maxout - minout) * ((input - minin) as f32)
-	   / ((maxin - minin) as f32) + minout
-}
