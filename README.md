@@ -1,10 +1,10 @@
 # rust-visual-art
 
 <div style="display: flex; justify-content: space-between; flex-direction: row"> 
-	<img height="320" width="180" src="./readme-examples/2025-03-31_15-59.png"/>
-	<img height="320" width="180" src="./readme-examples/2025-03-31_15-58.png"/>
-	<img height="320" width="180" src="./readme-examples/2025-03-31_15-58_1.png"/>
-	<img height="320" width="180" src="./readme-examples/2025-03-31_16-13.png"/>
+	<img width="320" height="180" src="./readme-examples/2025-03-31_15-59.png"/>
+	<img width="320" height="180" src="./readme-examples/2025-03-31_15-58.png"/>
+	<img width="320" height="180" src="./readme-examples/2025-03-31_15-58_1.png"/>
+	<img width="320" height="180" src="./readme-examples/2025-03-31_16-13.png"/>
 </div>
 
 ---
