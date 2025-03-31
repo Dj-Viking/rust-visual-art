@@ -57,16 +57,17 @@ The names of the patches with their numbers respectively. Which match up to the 
 by the file names prefixed with the number. This makes sure that the libs are loaded in the same order
 each time they are hot reloaded if the library code changes during runtime.
 
-Spiral - `1`,
-V2     - `2`,
-Waves  - `3`,
-Audio  - `4`,
-Solid  - `5`
+
+* Spiral - `1`,
+* V2     - `2`,
+* Waves  - `3`,
+* Audio  - `4`,
+* Solid  - `5`
 
 And the effect parameters currently setup can be changed with the arrow keys
 
-current_intensity modifier - `KeyUp`(positive direction),`KeyDown`(negative direction)
-time_dialation modifier    - `KeyLeft`(negative direction),`KeyRight`(positive direction)
+* current_intensity modifier - `KeyUp`(positive direction),`KeyDown`(negative direction)
+* time_dialation modifier    - `KeyLeft`(negative direction),`KeyRight`(positive direction)
 
 ---
 ### audio
