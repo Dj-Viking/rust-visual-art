@@ -1,8 +1,10 @@
 # rust-visual-art
 
-<img style="margin-bottom: 10px" height="320" width="180" src="./readme-examples/2025-03-31_15-59.png"/>
-<img style="margin-bottom: 10px" height="320" width="180" src="./readme-examples/2025-03-31_15-58.png"/>
-<img style="margin-bottom: 10px" height="320" width="180" src="./readme-examples/2025-03-31_15-58_1.png"/>
+<div style="display: flex; flex-direction: row"> 
+	<img style="margin-bottom: 10px" height="320" width="180" src="./readme-examples/2025-03-31_15-59.png"/>
+	<img style="margin-bottom: 10px" height="320" width="180" src="./readme-examples/2025-03-31_15-58.png"/>
+	<img style="margin-bottom: 10px" height="320" width="180" src="./readme-examples/2025-03-31_15-58_1.png"/>
+</div>
 
 ---
 
