@@ -10,7 +10,7 @@ fns = [
 ]
 intensity      = 16 # fader_1
 decay_factor   = 17 # fader_2
-sat_mod        = 18 # fader_3
+lum_mod        = 18 # fader_3
 time_dialation = 19 # fader_4
 reset          = 36 # A Button
 backwards      = 37 # B Button
@@ -20,7 +20,7 @@ is_fft         = 38 # C Button
 fns = [40, 41, 26]
 intensity      = 73
 decay_factor   = 0
-sat_mod        = 0
+lum_mod        = 0
 time_dialation = 19
 reset          = 0
 backwards      = 0

@@ -4,7 +4,7 @@
 use portmidi::PortMidi;
 
 use nannou::prelude::*;
-use nannou_audio as audio;
+use nannou_audio;
 use nannou_audio::Buffer;
 
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
@@ -111,7 +111,7 @@ struct MutState {
 	current_intensity: f32,
 	time_dialation:    f32,
 	decay_factor:      f32,
-	sat_mod:           f32,
+	lum_mod:           f32,
 	plugins:           Vec<loading::Plugin>,
 	active_func:       usize,
 }
@@ -126,9 +126,9 @@ static PLUGIN_PATH: LazyLock<&'static str> =
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("target/libs"));
 
-
 const SAMPLES: usize = 4096;
 static mut PLUGS_COUNT: u8 = 0;
+
 fn main() {
 
 	// list midi devices in terminal
@@ -139,7 +139,7 @@ fn main() {
 		std::process::exit(0);
 	}
 
-	// get the amount of plugins as part of knowing when to reload them 
+	// get the amount of plugins as part of knowing when to reload them
 	// when the watcher detects changes
 	if let Ok(entries) = std::fs::read_dir(&*PLUGIN_PATH) {
 		for entry in entries {
@@ -151,29 +151,28 @@ fn main() {
 
 	println!("plug count {}", unsafe { PLUGS_COUNT });
 
-	let init = |a: &App| { 
+	let init = |a: &App| {
 		let ms = Arc::new(Mutex::new(MutState {
-			plugins: { 
-				let mut p = Vec::new(); 
-				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p); 
+			plugins: {
+				let mut p = Vec::new();
+				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
 			},
 			is_fft: false,
 			..Default::default()
 		}));
 
-
-		let audio_host = audio::Host::new();
+		// setup audio input
+		let audio_host = nannou_audio::Host::new();
 
 		let input_config = audio_host
 			.default_input_device().unwrap()
 			.default_input_config().unwrap();
-		println!("default input {:#?}", 
+		println!("default input {:#?}",
 			input_config);
 
-		let audio_processor = Arc::new(Mutex::new(
-			AudioProcessor::new(
-				input_config.sample_rate().0 as usize, 
+		let audio_processor = Arc::new(Mutex::new(AudioProcessor::new(
+				input_config.sample_rate().0 as usize,
 				60.0)));
 
 		let ringbuffer = HeapRb::<f32>::new(SAMPLES * 2);
@@ -199,10 +198,15 @@ fn main() {
 			// 	.build()
 			// 	.unwrap();
 
+			// must be playing in a loop to keep the stream
+			// open
 			loop {
 				in_stream.play().unwrap();
-				// out_stream.play().unwrap();
 			}
+
+			// only if you need to hear the audio played back through the same device used for
+			// input
+			// out_stream.play().unwrap();
 		});
 
 		let ms_ = ms.clone();
@@ -211,7 +215,6 @@ fn main() {
 		std::thread::spawn(move || {
 			watch(&*PLUGIN_PATH, &ms_);
 		});
-
 
 		let ms_ = ms.clone();
 		if !std::env::args().skip(1).any(|a| a == "keys") {
@@ -248,10 +251,10 @@ fn main() {
 			.view(view)
 			.key_pressed(key_pressed)
 			.key_released(key_released)
-			.build().unwrap(); 
+			.build().unwrap();
 
-		State { 
-			ms, 
+		State {
+			ms,
 			consumer: cons,
 			audio_processor,
 		}
@@ -319,6 +322,18 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 }
 
 fn update(_app: &App, state: &mut State, _update: Update) {
+	// a pretty good decay factor
+	// can be controlled by midi but here for reference
+	// should give a slow smeary like feeling
+	// const FACTOR: f32 = 0.9999;
+
+	// TODO: smoothing somewhere??
+	// apply the smoothed values to the fft_buf
+	// fft.iter().map(|(_, x)| x)
+	// 	.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
+	// 		if *c > *p { *p = *c; } 
+	// 		else { *p *= FACTOR; });
+
 	let mut buffer = [0.0; 1024];
 	state.consumer.pop_slice(&mut buffer);
 	let mut ap = state.audio_processor.lock().unwrap();
@@ -334,17 +349,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	let mags = ap.get_magnitudes();
 
-	// a pretty good decay factor
-	// can be controlled by midi but here for reference
-	// should give a slow smeary like feeling
-	// const FACTOR: f32 = 0.9999;
-
-	// TODO: smoothing somewhere??
-	// apply the smoothed values to the fft_buf
-	// fft.iter().map(|(_, x)| x)
-	// 	.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
-	// 		if *c > *p { *p = *c; } 
-	// 		else { *p *= FACTOR; });
 	
 	static mut TIME: f32 = 0.0;
 
@@ -384,14 +388,12 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 		let hue = ms.plugins[ms.active_func].call(r.x(), r.y(), t);
 
-		// TODO: dynamic value for luminance changed on a function?
-		// let sat = ms.plugins[ms.active_func].call(r.x(), r.y(), t, mags);
-		let sat = if ms.is_fft {
-			lerp_float((mags[i] + ms.sat_mod).ceil() as u8, 0.01, 0.6, 0, 100)
+		let lum = if ms.is_fft {
+			lerp_float((mags[i] + ms.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())
-			.hsl(hue, 1.0, sat);
+			.hsl(hue, 1.0, lum);
 	}
 
 	draw.to_frame(app, &frame).unwrap();

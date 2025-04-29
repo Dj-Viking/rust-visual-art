@@ -1,5 +1,5 @@
 #[unsafe(no_mangle)]
-pub static SAT_MOD: f32 = 100.0;
+pub static LUM_MOD: f32 = 100.0;
 
 // may have to really control
 // the frames somehow updating
