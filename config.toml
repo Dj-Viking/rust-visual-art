@@ -17,8 +17,8 @@ time_dialation = 19 # fader_4
 reset          = 36 # A Button
 backwards      = 37 # B Button
 is_fft         = 38 # C Button
+decay_param    = 10 # 3_middle_knob
 modulo_param   = 14 # 3_bottom_knob
-decay_param    = 10 # 2_bottom_knob
 
 ["Arturia KeyLab Essential 61 MID"]
 fns = [40, 41, 26]
@@ -29,5 +29,5 @@ time_dialation = 19
 reset          = 0
 backwards      = 0
 is_fft         = 0
-modulo_param   = 0
 decay_param    = 0
+modulo_param   = 0
