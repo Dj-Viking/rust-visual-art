@@ -347,7 +347,7 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	}
 }
 
-fn update(app: &App, state: &mut State,_update: Update) {
+fn update(_app: &App, state: &mut State,_update: Update) {
 	
 	let mut buffer = [0.0; 1024];
 
