@@ -18,6 +18,7 @@ rustfft = "6.2"
 
 libloading = "0.8"
 notify = "8.0"
+memprint = "0.2.0"
 
 
 [profile.release]

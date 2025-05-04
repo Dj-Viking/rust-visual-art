@@ -1,5 +1,6 @@
 #![allow(static_mut_refs)]
 #![feature(if_let_guard)]
+#![allow(unused_imports)]
 
 use portmidi::PortMidi;
 
@@ -16,6 +17,8 @@ use rustfft::{Fft, FftPlanner};
 use rustfft::num_complex::Complex;
 
 use std::cmp::Ordering;
+
+use memprint::MemPrint;
 
 mod midi;
 mod loading;
@@ -37,6 +40,7 @@ enum ActiveFunc {
 	Audio,
 	Solid
 }
+
 
 struct AudioProcessor {
 	pub buffer: Vec<f32>,
@@ -75,10 +79,7 @@ impl AudioProcessor {
 		}
 	}
 
-	fn get_magnitudes(&self) -> Vec<f32> {
-
-		// TODO: add smoothing factor to the buffer samples
-		// before creating complex input
+	fn get_magnitudes(&self, decay: f32) -> Vec<f32> {
 
 		let mut complex_input: Vec<Complex<f32>> = 
 			self.buffer.iter()
@@ -86,12 +87,35 @@ impl AudioProcessor {
 
 		self.fft.process(&mut complex_input);
 
-		let mags = complex_input
+		// keep state on next call to this func
+		static mut DECAY_BUF: [f32; 1024] = [0.0; 1024];
+
+		let mut mags = complex_input
 			.iter().map(|c| {
 				let mag = c.norm() / complex_input.len() as f32;
 				20.0 * (mag.max(1e-8)).log10()
 			})
 			.collect::<Vec<f32>>();
+
+		// println!("old ===============");
+		// f32::memprint_block(&mags[..10]);
+
+		// add decay
+		mags.iter_mut().zip(unsafe { DECAY_BUF.iter_mut() }).for_each(|(curr_frame, prev_frame)| {
+				if *curr_frame > *prev_frame {
+					*curr_frame = *prev_frame * decay;
+				}
+
+				*prev_frame = *curr_frame;
+			});
+
+		// println!("new ===============");
+		// f32::memprint_block(&mags[..10]);
+
+		// println!("static thingy ===========");
+		// unsafe {
+		// 	f32::memprint_block(&DECAY_BUF[..10])
+		// }
 
 		mags
 	}
@@ -114,6 +138,8 @@ struct MutState {
 	lum_mod:           f32,
 	plugins:           Vec<loading::Plugin>,
 	active_func:       usize,
+	modulo_param:      f32,
+	decay_param:       f32,
 }
 
 static CONF_FILE:   LazyLock<&'static str> = 
@@ -322,24 +348,18 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 }
 
 fn update(_app: &App, state: &mut State, _update: Update) {
-	// a pretty good decay factor
-	// can be controlled by midi but here for reference
-	// should give a slow smeary like feeling
-	// const FACTOR: f32 = 0.9999;
-
-	// TODO: smoothing somewhere??
-	// apply the smoothed values to the fft_buf
-	// fft.iter().map(|(_, x)| x)
-	// 	.zip(fft_buf.iter_mut()).for_each(|(c, p)| 
-	// 		if *c > *p { *p = *c; } 
-	// 		else { *p *= FACTOR; });
-
+	
 	let mut buffer = [0.0; 1024];
-	state.consumer.pop_slice(&mut buffer);
-	let mut ap = state.audio_processor.lock().unwrap();
-	ap.add_samples(&buffer);
-}
 
+	state.consumer.pop_slice(&mut buffer);
+
+	let mut ap = state.audio_processor.lock().unwrap();
+
+	ap.add_samples(&buffer);
+
+	// println!("============");
+	// f32::memprint_block(&ap.buffer);
+}
 
 fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
@@ -347,8 +367,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 	let mut ms = s.ms.lock().unwrap();
 	let ap = s.audio_processor.lock().unwrap();
 
-	let mags = ap.get_magnitudes();
-
+	let mags = ap.get_magnitudes(ms.decay_param);
 	
 	static mut TIME: f32 = 0.0;
 
@@ -358,7 +377,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		ms.is_backwards = !ms.is_backwards;
 	}
 	
-	let mut i = 0;
+	let mut i: i32 = -1;
 	for r in app.window_rect().subdivisions_iter()
 		.flat_map(|r| r.subdivisions_iter())
 		.flat_map(|r| r.subdivisions_iter())
@@ -367,9 +386,14 @@ fn view(app: &App, s: &State, frame: Frame) {
 		.flat_map(|r| r.subdivisions_iter())
 	{
 		i += 1;
-		if i == mags.len() {
+
+		// TODO: figure out how to get mags.len() to 4096!
+		// if i == mags.len() {
+
+		if i % (ms.modulo_param + 1.0) as i32 == 0 {
 			i = 0;
 		}
+
 		match ms.is_backwards {
 			true => unsafe { TIME -= app.duration.since_prev_update.as_secs_f32() },
 			_    => unsafe { TIME += app.duration.since_prev_update.as_secs_f32() },
@@ -389,7 +413,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		let hue = ms.plugins[ms.active_func].call(r.x(), r.y(), t);
 
 		let lum = if ms.is_fft {
-			lerp_float((mags[i] + ms.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
+			lerp_float((mags[i as usize] + ms.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())

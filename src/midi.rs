@@ -13,6 +13,8 @@ struct DConfig {
 	lum_mod:        u8,
 	reset:          u8,
 	is_fft:         u8,
+	modulo_param:   u8,
+	decay_param:    u8,
 }
 
 pub struct Midi {
@@ -34,7 +36,7 @@ impl Midi {
 				d.direction() == portmidi::Direction::Input 
 				&& config.keys().any(|n| n == d.name()))
 			.unwrap_or_else(|| {
-				eprintln!("No device defined in config found");
+				eprintln!("No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
 				std::process::exit(1);
 			});
 
@@ -48,7 +50,7 @@ impl Midi {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
-		let lerp = |range| crate::lerp_float(intensity, 0.0, range, 0, 127);
+		let lerp_with_range = |range| crate::lerp_float(intensity, 0.0, range, 0, 127);
 
 		match channel {
 
@@ -56,13 +58,17 @@ impl Midi {
 			c if c == self.cfg.backwards && intensity == 127 => ms.is_backwards = !ms.is_backwards,
 			c if c == self.cfg.is_fft    && intensity == 127 => ms.is_fft       = !ms.is_fft,
 
-			c if c == self.cfg.intensity      => ms.current_intensity = lerp(ms.plugins[ms.active_func].intensity_range),
-			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp(1.0),
-			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp(ms.plugins[ms.active_func].time_dialation_range),
-			c if c == self.cfg.lum_mod        => ms.lum_mod           = lerp(ms.plugins[ms.active_func].lum_mod),
+			// continuous control values
+			c if c == self.cfg.intensity      => ms.current_intensity = lerp_with_range(ms.plugins[ms.active_func].intensity_range),
+			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp_with_range(1.0),
+			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp_with_range(ms.plugins[ms.active_func].time_dialation_range),
+			c if c == self.cfg.lum_mod        => ms.lum_mod           = lerp_with_range(ms.plugins[ms.active_func].lum_mod),
+			c if c == self.cfg.modulo_param   => ms.modulo_param      = lerp_with_range(368.0),
+			c if c == self.cfg.decay_param    => ms.decay_param       = lerp_with_range(0.9999),
 
 			_ if intensity == 0 => (),
 
+			// latched on function to be activated from plugins
 			c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,
 			_ => (),
 		}

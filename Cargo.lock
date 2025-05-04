@@ -364,6 +364,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
+name = "colored"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
+dependencies = [
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "com-rs"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1342,6 +1351,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "memprint"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe402ac501cd8a0f927aafa877fb298c97e4e93d5e7403f4e60cf54a4e99db5a"
+dependencies = [
+ "colored",
+ "memprint_derive",
+]
+
+[[package]]
+name = "memprint_derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27ff2409e620d870aac25504c101ce848664bb16a41fb6f513df401f7437831f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.91",
+]
+
+[[package]]
 name = "metal"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2292,6 +2322,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "libloading 0.8.6",
+ "memprint",
  "nannou",
  "nannou_audio",
  "notify",
