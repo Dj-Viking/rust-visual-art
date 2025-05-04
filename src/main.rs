@@ -194,8 +194,8 @@ fn main() {
 		let input_config = audio_host
 			.default_input_device().unwrap()
 			.default_input_config().unwrap();
-		println!("default input {:#?}",
-			input_config);
+
+		println!("default input {:#?}", input_config);
 
 		let audio_processor = Arc::new(Mutex::new(AudioProcessor::new(
 				input_config.sample_rate().0 as usize,
@@ -217,7 +217,7 @@ fn main() {
 				.build()
 				.unwrap();
 
-			// let out_model = OutputModel { consumer: cons_, ap: ap__ };
+			// let out_model = OutputModel { consumer: cons };
 			// let out_stream = audio_host
 			// 	.new_output_stream(out_model)
 			// 	.render(pass_out)
