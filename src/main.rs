@@ -81,7 +81,7 @@ impl AudioProcessor {
 
 	fn get_magnitudes(&self, decay: f32) -> Vec<f32> {
 
-		let mut complex_input: Vec<Complex<f32>> = 
+		let mut complex_input: Vec<Complex<f32>> =
 			self.buffer.iter()
 			.map(|&x| Complex::new(x, 0.0)).collect();
 
@@ -142,12 +142,12 @@ struct MutState {
 	decay_param:       f32,
 }
 
-static CONF_FILE:   LazyLock<&'static str> = 
+static CONF_FILE:   LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("CONF_FILE")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("config.toml"));
 
-static PLUGIN_PATH: LazyLock<&'static str> = 
+static PLUGIN_PATH: LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("PLUGIN_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("target/libs"));
@@ -443,7 +443,7 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 			) {
 				event_count += 1;
 
-				// wait for files to be fully removed 
+				// wait for files to be fully removed
 				// and recreated by the build script
 				// kind of a weird hack because an event is fired for each File
 				// in the plugin path but I need to wait for all the files
@@ -465,7 +465,7 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 	} }
 }
 
-// output a number within a specific range from an entirely 
+// output a number within a specific range from an entirely
 pub fn lerp_float(
     input:  u8,  // - input value to determine what position in the range the number sits
     minout: f32, // - minimum percentage value
