@@ -68,10 +68,24 @@ impl Midi {
 
 			_ if intensity == 0 => (),
 
+			// any other messages are probably unassigned config values 
+			// or possibly the plugin function library collection indicies
 			// latched on function to be activated from plugins
-			c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,
-			_ => (),
+			// unfortunately this requires #[feature(if_let_guard)] 
+			//
+			// c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,
+			//
+			// but it stopped working after I
+			// updated rust. so i guess it was removed :( instead use nested match statement
+			// and if the message on certain channels that are 
+			_ if intensity == 127 => match self.cfg.fns.iter().position(|f| *f == channel) {
+				Some(i) => { ms.active_func = i; },
+				None => (),
+			},
+			_ => () 
 		}
+
+
 
 		// momentary switch
 		ms.is_reset = channel == self.cfg.reset && intensity > 0;
