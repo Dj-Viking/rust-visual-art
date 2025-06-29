@@ -8,6 +8,7 @@ use nannou_audio;
 use nannou_audio::Buffer;
 
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
+use std::collections::HashMap;
 
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::HeapRb;
@@ -46,6 +47,8 @@ struct MutState {
 	is_backwards:      bool,
 	is_reset:          bool,
 	is_fft:            bool,
+	is_saving_preset:  bool,
+	save_listen:       bool,
 	current_intensity: f32,
 	time_dialation:    f32,
 	decay_factor:      f32,
@@ -53,7 +56,37 @@ struct MutState {
 	modulo_param:      f32,
 	decay_param:       f32,
 	plugins:           Vec<loading::Plugin>,
+	save_states:       HashMap<String, SaveState>,
 }
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SaveState {
+	cc:                u8,
+	active_func:       usize,
+	is_fft:            bool,
+	current_intensity: f32,
+	time_dialation:    f32,
+	decay_factor:      f32,
+	lum_mod:           f32,
+	modulo_param:      f32,
+	decay_param:       f32,
+}
+/* for serializing the config to a string to write to a file
+let config = Config {
+   ip: "anything".to_string(),
+   port: None,
+   keys: Keys {
+       some_key: Some("value".to_string()),
+   },
+};
+
+let toml = toml::to_string(&config).unwrap();
+*/
+
+static SAVE_STATES: LazyLock<&'static str> =
+	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
+		.map(|s| &*Box::leak(s.into_boxed_str()))
+		.unwrap_or("save_states.toml"));
 
 static CONF_FILE:   LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("CONF_FILE")
@@ -96,6 +129,14 @@ fn main() {
 				let mut p = Vec::new();
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
+			},
+			save_states: {
+				let mut ss: HashMap<String, SaveState> =
+					toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
+						eprintln!("Error reading save_states.toml file: {e}");
+						std::process::exit(1);
+					});
+				ss
 			},
 			is_fft: false,
 			..Default::default()
@@ -230,7 +271,8 @@ fn pass_out(model: &mut OutputModel, buffer: &mut Buffer) -> () {
 fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
-		Key::R => ms.is_reset = false,
+		Key::R => ms.is_reset         = false,
+		Key::P => ms.is_saving_preset = false,
 		_ => ()
 	}
 }
@@ -244,7 +286,9 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	};
 
 	match key {
-		Key::R => ms.is_reset = true,
+		Key::R => ms.is_reset         = true,
+		Key::P => ms.is_saving_preset = true,
+		Key::L => ms.save_listen      = true,
 
 		Key::Key1 => set_active_func(ms, ActiveFunc::Spiral),
 		Key::Key2 => set_active_func(ms, ActiveFunc::V2),
