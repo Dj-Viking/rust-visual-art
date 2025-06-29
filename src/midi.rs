@@ -5,16 +5,18 @@ use crate::MutState;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DConfig {
-	backwards:      u8,
-	fns:            Box<[u8]>,
-	intensity:      u8,
-	time_dialation: u8,
-	decay_factor:   u8,
-	lum_mod:        u8,
-	reset:          u8,
-	is_fft:         u8,
-	modulo_param:   u8,
-	decay_param:    u8,
+	backwards:       u8,
+	fns:             Box<[u8]>,
+	intensity:       u8,
+	time_dialation:  u8,
+	decay_factor:    u8,
+	lum_mod:         u8,
+	reset:           u8,
+	is_fft:          u8,
+	modulo_param:    u8,
+	decay_param:     u8,
+	save_listen:     u8,
+	preset_btn_save: u8,
 }
 
 pub struct Midi {
@@ -55,8 +57,9 @@ impl Midi {
 		match channel {
 
 			// latched boolean when condition matches
-			c if c == self.cfg.backwards && intensity == 127 => ms.is_backwards = !ms.is_backwards,
-			c if c == self.cfg.is_fft    && intensity == 127 => ms.is_fft       = !ms.is_fft,
+			c if c == self.cfg.backwards   && intensity == 127 => ms.is_backwards = !ms.is_backwards,
+			c if c == self.cfg.is_fft      && intensity == 127 => ms.is_fft       = !ms.is_fft,
+			c if c == self.cfg.save_listen && intensity == 127 => ms.save_listen  = !ms.save_listen,
 
 			// continuous control values
 			c if c == self.cfg.intensity      => ms.current_intensity = lerp_with_range(ms.plugins[ms.active_func].intensity_range),
@@ -88,7 +91,8 @@ impl Midi {
 
 
 		// momentary switch
-		ms.is_reset = channel == self.cfg.reset && intensity > 0;
+		ms.is_reset         = channel == self.cfg.reset           && intensity > 0;
+		ms.is_saving_preset = channel == self.cfg.preset_btn_save && intensity > 0;
 
 	}
 }
