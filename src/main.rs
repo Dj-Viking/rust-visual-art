@@ -43,6 +43,7 @@ struct State {
 
 #[derive(Default)]
 struct MutState {
+	cc:                u8,
 	active_func:       usize,
 	is_backwards:      bool,
 	is_reset:          bool,
@@ -70,6 +71,22 @@ pub struct SaveState {
 	lum_mod:           f32,
 	modulo_param:      f32,
 	decay_param:       f32,
+}
+impl SaveState {
+	fn new(ms: &mut MutexGuard<'_, MutState>) -> Self {
+		Self {
+			cc: ms.cc,
+			active_func: ms.active_func,
+			is_fft: ms.is_fft, 
+			current_intensity: ms.current_intensity,
+			time_dialation: ms.time_dialation,
+			decay_factor: ms.decay_factor,
+			lum_mod: ms.lum_mod,
+			modulo_param: ms.modulo_param,
+			decay_param: ms.decay_param,
+		}
+	}
+
 }
 /* for serializing the config to a string to write to a file
 let config = Config {
@@ -139,6 +156,7 @@ fn main() {
 				ss
 			},
 			is_fft: false,
+			save_listen: false,
 			..Default::default()
 		}));
 
@@ -315,6 +333,21 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 
 	ap.add_samples(&buffer);
 
+	let mut ms = state.ms.lock().unwrap();
+
+	if ms.save_listen {
+		let ss = SaveState::new(&mut ms);
+
+		let mut tomlstring: String = String::from(format!("[{}]", ms.cc));
+
+		let toml = toml::to_string(&ss).unwrap();
+
+		tomlstring.push_str(Box::leak(format!("\n{}", toml).into_boxed_str()));
+
+		let _ = std::fs::write("save_states.toml", tomlstring);
+
+		ms.save_listen = false;
+	}
 	// println!("============");
 	// f32::memprint_block(&ap.buffer);
 }

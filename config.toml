@@ -19,6 +19,7 @@ backwards       = 37 # B Button
 is_fft          = 38 # C Button
 save_listen     = 39 # D Button
 preset_btn_save = 40 # E Button
+preset_1_state  = 0  # ??? 
 decay_param     = 10 # 3_middle_knob
 modulo_param    = 14 # 3_bottom_knob
 
@@ -39,3 +40,4 @@ decay_param     = 0
 modulo_param    = 0
 save_listen     = 0
 preset_btn_save = 0
+preset_1_state  = 0  # ??? 
