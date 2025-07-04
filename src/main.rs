@@ -49,7 +49,7 @@ struct MutState {
 	is_reset:          bool,
 	is_fft:            bool,
 	is_saving_preset:  bool,
-	save_listen:       bool,
+	is_listening:      bool,
 	current_intensity: f32,
 	time_dialation:    f32,
 	decay_factor:      f32,
@@ -57,10 +57,9 @@ struct MutState {
 	modulo_param:      f32,
 	decay_param:       f32,
 	plugins:           Vec<loading::Plugin>,
-	save_states:       HashMap<String, SaveState>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct SaveState {
 	cc:                u8,
 	active_func:       usize,
@@ -88,17 +87,6 @@ impl SaveState {
 	}
 
 }
-/* for serializing the config to a string to write to a file
-let config = Config {
-   ip: "anything".to_string(),
-   port: None,
-   keys: Keys {
-       some_key: Some("value".to_string()),
-   },
-};
-
-let toml = toml::to_string(&config).unwrap();
-*/
 
 static SAVE_STATES: LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
@@ -141,22 +129,35 @@ fn main() {
 	println!("plug count {}", unsafe { PLUGS_COUNT });
 
 	let init = |a: &App| {
+		let ss: HashMap<String, SaveState> =
+			toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
+				eprintln!("Error reading save_states.toml file: {e}");
+				std::process::exit(1);
+			});
 		let ms = Arc::new(Mutex::new(MutState {
 			plugins: {
 				let mut p = Vec::new();
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
 			},
-			save_states: {
-				let mut ss: HashMap<String, SaveState> =
-					toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
-						eprintln!("Error reading save_states.toml file: {e}");
-						std::process::exit(1);
-					});
-				ss
-			},
-			is_fft: false,
-			save_listen: false,
+			// TODO: function that i can spread the properties from first save state ???
+			// so that the assigned savestate CC can be loaded while the app is running
+			// by whichever CC that preset was saved as
+			// I think "0" will be the default CC for the save_state.toml example that is committed
+			// all the other save state files will be ignored and could be named by their active
+			// func name and the button assigned to it? 
+			
+			is_listening:      false,
+			// loading in the save state
+			cc:                ss["0"].cc,
+			active_func:       ss["0"].active_func,
+			is_fft:            ss["0"].is_fft,
+			current_intensity: ss["0"].current_intensity,
+			time_dialation:    ss["0"].time_dialation,
+			decay_factor:      ss["0"].decay_factor,
+			lum_mod:           ss["0"].lum_mod,
+			modulo_param:      ss["0"].modulo_param,
+			decay_param:       ss["0"].decay_param,
 			..Default::default()
 		}));
 
@@ -290,7 +291,10 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
 		Key::R => ms.is_reset         = false,
-		Key::P => ms.is_saving_preset = false,
+		Key::P => {
+			println!("is_saving_preset false");
+			ms.is_saving_preset = false;
+		},
 		_ => ()
 	}
 }
@@ -305,8 +309,14 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 
 	match key {
 		Key::R => ms.is_reset         = true,
-		Key::P => ms.is_saving_preset = true,
-		Key::L => ms.save_listen      = true,
+		Key::P => {
+			println!("is_saving_preset true");
+			ms.is_saving_preset = true;
+		},
+		Key::L => {
+			println!("is_listening true");
+			ms.is_listening     = true;
+		}
 
 		Key::Key1 => set_active_func(ms, ActiveFunc::Spiral),
 		Key::Key2 => set_active_func(ms, ActiveFunc::V2),
@@ -335,18 +345,23 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 
 	let mut ms = state.ms.lock().unwrap();
 
-	if ms.save_listen {
+	if ms.is_listening && ms.is_saving_preset {
 		let ss = SaveState::new(&mut ms);
 
+		// TODO: if the CC was different than the current one then save a new file
+		// instead of saving over the existing one
+		// should the save states be committed since they are user defined and can change
+		// frequently?
 		let mut tomlstring: String = String::from(format!("[{}]", ms.cc));
 
 		let toml = toml::to_string(&ss).unwrap();
 
-		tomlstring.push_str(Box::leak(format!("\n{}", toml).into_boxed_str()));
+		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
 
 		let _ = std::fs::write("save_states.toml", tomlstring);
 
-		ms.save_listen = false;
+		println!("is_listening false");
+		ms.is_listening = false;
 	}
 	// println!("============");
 	// f32::memprint_block(&ap.buffer);
