@@ -15,7 +15,7 @@ struct DConfig {
 	is_fft:          u8,
 	modulo_param:    u8,
 	decay_param:     u8,
-	save_listen:     u8,
+	is_listening:    u8,
 	preset_btn_save: u8,
 }
 
@@ -57,9 +57,9 @@ impl Midi {
 		match channel {
 
 			// latched boolean when condition matches
-			c if c == self.cfg.backwards   && intensity == 127 => ms.is_backwards = !ms.is_backwards,
-			c if c == self.cfg.is_fft      && intensity == 127 => ms.is_fft       = !ms.is_fft,
-			c if c == self.cfg.save_listen && intensity == 127 => ms.save_listen  = !ms.save_listen,
+			c if c == self.cfg.backwards    && intensity == 127 => ms.is_backwards  = !ms.is_backwards,
+			c if c == self.cfg.is_fft       && intensity == 127 => ms.is_fft        = !ms.is_fft,
+			c if c == self.cfg.is_listening && intensity == 127 => ms.is_listening  = !ms.is_listening,
 
 			// continuous control values
 			c if c == self.cfg.intensity      => ms.current_intensity = lerp_with_range(ms.plugins[ms.active_func].intensity_range),
