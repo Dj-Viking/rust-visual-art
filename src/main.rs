@@ -8,6 +8,7 @@ use nannou_audio;
 use nannou_audio::Buffer;
 
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
+use std::collections::HashMap;
 
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::HeapRb;
@@ -42,10 +43,13 @@ struct State {
 
 #[derive(Default)]
 struct MutState {
+	cc:                u8,
 	active_func:       usize,
 	is_backwards:      bool,
 	is_reset:          bool,
 	is_fft:            bool,
+	is_saving_preset:  bool,
+	save_listen:       bool,
 	current_intensity: f32,
 	time_dialation:    f32,
 	decay_factor:      f32,
@@ -53,7 +57,53 @@ struct MutState {
 	modulo_param:      f32,
 	decay_param:       f32,
 	plugins:           Vec<loading::Plugin>,
+	save_states:       HashMap<String, SaveState>,
 }
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SaveState {
+	cc:                u8,
+	active_func:       usize,
+	is_fft:            bool,
+	current_intensity: f32,
+	time_dialation:    f32,
+	decay_factor:      f32,
+	lum_mod:           f32,
+	modulo_param:      f32,
+	decay_param:       f32,
+}
+impl SaveState {
+	fn new(ms: &mut MutexGuard<'_, MutState>) -> Self {
+		Self {
+			cc: ms.cc,
+			active_func: ms.active_func,
+			is_fft: ms.is_fft, 
+			current_intensity: ms.current_intensity,
+			time_dialation: ms.time_dialation,
+			decay_factor: ms.decay_factor,
+			lum_mod: ms.lum_mod,
+			modulo_param: ms.modulo_param,
+			decay_param: ms.decay_param,
+		}
+	}
+
+}
+/* for serializing the config to a string to write to a file
+let config = Config {
+   ip: "anything".to_string(),
+   port: None,
+   keys: Keys {
+       some_key: Some("value".to_string()),
+   },
+};
+
+let toml = toml::to_string(&config).unwrap();
+*/
+
+static SAVE_STATES: LazyLock<&'static str> =
+	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
+		.map(|s| &*Box::leak(s.into_boxed_str()))
+		.unwrap_or("save_states.toml"));
 
 static CONF_FILE:   LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("CONF_FILE")
@@ -97,7 +147,16 @@ fn main() {
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
 			},
+			save_states: {
+				let mut ss: HashMap<String, SaveState> =
+					toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
+						eprintln!("Error reading save_states.toml file: {e}");
+						std::process::exit(1);
+					});
+				ss
+			},
 			is_fft: false,
+			save_listen: false,
 			..Default::default()
 		}));
 
@@ -230,7 +289,8 @@ fn pass_out(model: &mut OutputModel, buffer: &mut Buffer) -> () {
 fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
-		Key::R => ms.is_reset = false,
+		Key::R => ms.is_reset         = false,
+		Key::P => ms.is_saving_preset = false,
 		_ => ()
 	}
 }
@@ -244,7 +304,9 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	};
 
 	match key {
-		Key::R => ms.is_reset = true,
+		Key::R => ms.is_reset         = true,
+		Key::P => ms.is_saving_preset = true,
+		Key::L => ms.save_listen      = true,
 
 		Key::Key1 => set_active_func(ms, ActiveFunc::Spiral),
 		Key::Key2 => set_active_func(ms, ActiveFunc::V2),
@@ -271,6 +333,21 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 
 	ap.add_samples(&buffer);
 
+	let mut ms = state.ms.lock().unwrap();
+
+	if ms.save_listen {
+		let ss = SaveState::new(&mut ms);
+
+		let mut tomlstring: String = String::from(format!("[{}]", ms.cc));
+
+		let toml = toml::to_string(&ss).unwrap();
+
+		tomlstring.push_str(Box::leak(format!("\n{}", toml).into_boxed_str()));
+
+		let _ = std::fs::write("save_states.toml", tomlstring);
+
+		ms.save_listen = false;
+	}
 	// println!("============");
 	// f32::memprint_block(&ap.buffer);
 }
