@@ -67,15 +67,15 @@ pub struct SaveState {
 impl SaveState {
 	fn new(ms: &mut MutexGuard<'_, MutState>) -> Self {
 		Self {
-			cc: ms.save_state.cc,
-			active_func: ms.save_state.active_func,
-			is_fft: ms.save_state.is_fft, 
+			cc:                ms.save_state.cc,
+			active_func:       ms.save_state.active_func,
+			is_fft:            ms.save_state.is_fft, 
 			current_intensity: ms.save_state.current_intensity,
-			time_dialation: ms.save_state.time_dialation,
-			decay_factor: ms.save_state.decay_factor,
-			lum_mod: ms.save_state.lum_mod,
-			modulo_param: ms.save_state.modulo_param,
-			decay_param: ms.save_state.decay_param,
+			time_dialation:    ms.save_state.time_dialation,
+			decay_factor:      ms.save_state.decay_factor,
+			lum_mod:           ms.save_state.lum_mod,
+			modulo_param:      ms.save_state.modulo_param,
+			decay_param:       ms.save_state.decay_param,
 		}
 	}
 
