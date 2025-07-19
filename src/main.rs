@@ -32,7 +32,8 @@ enum ActiveFunc {
 	V2,
 	Waves,
 	Audio,
-	Solid
+	Solid,
+	Something
 }
 
 struct State {
@@ -43,23 +44,15 @@ struct State {
 
 #[derive(Default)]
 struct MutState {
-	cc:                u8,
-	active_func:       usize,
 	is_backwards:      bool,
 	is_reset:          bool,
-	is_fft:            bool,
 	is_saving_preset:  bool,
 	is_listening:      bool,
-	current_intensity: f32,
-	time_dialation:    f32,
-	decay_factor:      f32,
-	lum_mod:           f32,
-	modulo_param:      f32,
-	decay_param:       f32,
 	plugins:           Vec<loading::Plugin>,
+	save_state:        SaveState,
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SaveState {
 	cc:                u8,
 	active_func:       usize,
@@ -74,15 +67,15 @@ pub struct SaveState {
 impl SaveState {
 	fn new(ms: &mut MutexGuard<'_, MutState>) -> Self {
 		Self {
-			cc: ms.cc,
-			active_func: ms.active_func,
-			is_fft: ms.is_fft, 
-			current_intensity: ms.current_intensity,
-			time_dialation: ms.time_dialation,
-			decay_factor: ms.decay_factor,
-			lum_mod: ms.lum_mod,
-			modulo_param: ms.modulo_param,
-			decay_param: ms.decay_param,
+			cc: ms.save_state.cc,
+			active_func: ms.save_state.active_func,
+			is_fft: ms.save_state.is_fft, 
+			current_intensity: ms.save_state.current_intensity,
+			time_dialation: ms.save_state.time_dialation,
+			decay_factor: ms.save_state.decay_factor,
+			lum_mod: ms.save_state.lum_mod,
+			modulo_param: ms.save_state.modulo_param,
+			decay_param: ms.save_state.decay_param,
 		}
 	}
 
@@ -106,7 +99,9 @@ static PLUGIN_PATH: LazyLock<&'static str> =
 const SAMPLES: usize = 4096;
 static mut PLUGS_COUNT: u8 = 0;
 
-fn main() {
+static mut HMR_ON: bool = false;
+
+fn check_args() {
 
 	// list midi devices in terminal
 	if std::env::args().skip(1).any(|a| a == "list") {
@@ -115,6 +110,34 @@ fn main() {
 		devices.iter().for_each(|d| println!("{} {:?} {:?}", d.id(), d.name(), d.direction()));
 		std::process::exit(0);
 	}
+
+	if std::env::args().skip(1).any(|a| a == "hmr") {
+		unsafe { HMR_ON = true; };
+	}
+}
+
+fn use_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
+	println!("ss map {:#?}: ", ss_map);
+	if unsafe { !HMR_ON } {
+		return Some(SaveState {
+			cc:                ss_map["0"].cc,
+			active_func:       ss_map["0"].active_func,
+			is_fft:            ss_map["0"].is_fft,
+			current_intensity: ss_map["0"].current_intensity,
+			time_dialation:    ss_map["0"].time_dialation,
+			decay_factor:      ss_map["0"].decay_factor,
+			lum_mod:           ss_map["0"].lum_mod,
+			modulo_param:      ss_map["0"].modulo_param,
+			decay_param:       ss_map["0"].decay_param,
+		});
+	}
+
+	None
+}
+
+fn main() {
+
+	check_args();
 
 	// get the amount of plugins as part of knowing when to reload them
 	// when the watcher detects changes
@@ -129,35 +152,29 @@ fn main() {
 	println!("plug count {}", unsafe { PLUGS_COUNT });
 
 	let init = |a: &App| {
-		let ss: HashMap<String, SaveState> =
+		let ss_map: HashMap<String, SaveState> =
 			toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
 				eprintln!("Error reading save_states.toml file: {e}");
 				std::process::exit(1);
 			});
+
 		let ms = Arc::new(Mutex::new(MutState {
 			plugins: {
 				let mut p = Vec::new();
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
 			},
-			// TODO: function that i can spread the properties from first save state ???
-			// so that the assigned savestate CC can be loaded while the app is running
-			// by whichever CC that preset was saved as
-			// I think "0" will be the default CC for the save_state.toml example that is committed
-			// all the other save state files will be ignored and could be named by their active
-			// func name and the button assigned to it? 
-			
 			is_listening:      false,
-			// loading in the save state
-			cc:                ss["0"].cc,
-			active_func:       ss["0"].active_func,
-			is_fft:            ss["0"].is_fft,
-			current_intensity: ss["0"].current_intensity,
-			time_dialation:    ss["0"].time_dialation,
-			decay_factor:      ss["0"].decay_factor,
-			lum_mod:           ss["0"].lum_mod,
-			modulo_param:      ss["0"].modulo_param,
-			decay_param:       ss["0"].decay_param,
+			save_state: { // loading in the save state if we did not pass 'hmr' as a cli arg to cargo
+				if let Some(ss) = use_save_state(&ss_map) {
+					println!("using save state {:#?}", ss);
+					ss
+				} else { 
+					let dss = SaveState {..Default::default()};
+					println!("not using save state {:#?}", dss); 
+					dss
+				}
+			},
 			..Default::default()
 		}));
 
@@ -205,18 +222,23 @@ fn main() {
 			}
 
 			// only if you need to hear the audio played back through the same device used for
-			// input
+			// input 
+			// in a loop?? i dont remember
 			// out_stream.play().unwrap();
 		});
 
 		let ms_ = ms.clone();
 
-		// watch plugin file changes
-		std::thread::spawn(move || {
-			watch(&*PLUGIN_PATH, &ms_);
-		});
+		// watch plugin file changes if user passed hmr as a cli arg
+		if unsafe { HMR_ON } {
+			std::thread::spawn(move || {
+				watch(&*PLUGIN_PATH, &ms_);
+			});
+		}
 
 		let ms_ = ms.clone();
+
+		// TODO: put this midi setup in a func to clean up main() a bit?
 		if !std::env::args().skip(1).any(|a| a == "keys") {
 			let pm_ctx = PortMidi::new().unwrap();
 			let midi = midi::Midi::new(&pm_ctx).unwrap();
@@ -291,9 +313,8 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
 		Key::R => ms.is_reset         = false,
-		Key::P => {
-			println!("is_saving_preset false");
-			ms.is_saving_preset = false;
+		Key::P => { println!("is_saving_preset false");
+			      ms.is_saving_preset = false;
 		},
 		_ => ()
 	}
@@ -302,13 +323,16 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 
-	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| match ms.plugins.len().cmp(&(n.clone() as usize)) {
+	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| {
+		println!("active func {:?}", ms.save_state.active_func);
+		match ms.plugins.len().cmp(&(n.clone() as usize)) {
 		std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
-		_ => ms.active_func = n as usize,
+		_ => ms.save_state.active_func = n as usize,
+		}
 	};
 
 	match key {
-		Key::R => ms.is_reset         = true,
+		Key::R => ms.is_reset   = true,
 		Key::P => {
 			println!("is_saving_preset true");
 			ms.is_saving_preset = true;
@@ -323,11 +347,12 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 		Key::Key3 => set_active_func(ms, ActiveFunc::Waves),
 		Key::Key4 => set_active_func(ms, ActiveFunc::Audio),
 		Key::Key5 => set_active_func(ms, ActiveFunc::Solid),
+		Key::Key6 => set_active_func(ms, ActiveFunc::Something),
 
-		Key::Up    if ms.current_intensity < 255.0 => ms.current_intensity += 1.0,
-		Key::Down  if ms.current_intensity > 0.0   => ms.current_intensity -= 1.0,
-		Key::Right if ms.time_dialation    < 255.0 => ms.time_dialation += 1.0,
-		Key::Left  if ms.time_dialation    > 0.0   => ms.time_dialation -= 1.0,
+		Key::Up    if ms.save_state.current_intensity < 255.0 => ms.save_state.current_intensity += 1.0,
+		Key::Down  if ms.save_state.current_intensity > 0.0   => ms.save_state.current_intensity -= 1.0,
+		Key::Right if ms.save_state.time_dialation    < 255.0 => ms.save_state.time_dialation += 1.0,
+		Key::Left  if ms.save_state.time_dialation    > 0.0   => ms.save_state.time_dialation -= 1.0,
 
 		_ => (),
 	}
@@ -335,15 +360,19 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 
 fn update(_app: &App, state: &mut State,_update: Update) {
 	
-	let mut buffer = [0.0; 1024];
-
-	state.consumer.pop_slice(&mut buffer);
-
-	let mut ap = state.audio_processor.lock().unwrap();
-
-	ap.add_samples(&buffer);
 
 	let mut ms = state.ms.lock().unwrap();
+
+	if ms.save_state.is_fft {
+		let mut buffer = [0.0; 1024];
+
+		state.consumer.pop_slice(&mut buffer);
+
+		let mut ap = state.audio_processor.lock().unwrap();
+
+		ap.add_samples(&buffer);
+	}
+
 
 	if ms.is_listening && ms.is_saving_preset {
 		let ss = SaveState::new(&mut ms);
@@ -352,7 +381,7 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 		// instead of saving over the existing one
 		// should the save states be committed since they are user defined and can change
 		// frequently?
-		let mut tomlstring: String = String::from(format!("[{}]", ms.cc));
+		let mut tomlstring: String = String::from(format!("[{}]", ms.save_state.cc));
 
 		let toml = toml::to_string(&ss).unwrap();
 
@@ -373,7 +402,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 	let mut ms = s.ms.lock().unwrap();
 	let ap = s.audio_processor.lock().unwrap();
 
-	let mags = ap.get_magnitudes(ms.decay_param);
+	let mags = ap.get_magnitudes(ms.save_state.decay_param);
 	
 	static mut TIME: f32 = 0.0;
 
@@ -396,7 +425,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		// TODO: figure out how to get mags.len() to 4096!
 		// if i == mags.len() {
 
-		if i % (ms.modulo_param + 1.0) as i32 == 0 {
+		if i % (ms.save_state.modulo_param + 1.0) as i32 == 0 {
 			i = 0;
 		}
 
@@ -411,15 +440,27 @@ fn view(app: &App, s: &State, frame: Frame) {
 		}
 
 		if ms.is_reset { unsafe { TIME = 0.0; } }
-		
-		let t = unsafe { TIME } /
-			(ms.plugins[ms.active_func].time_divisor + 100000.0 * (ms.time_dialation / 10.0))
-			+ ms.current_intensity / 100.0;
 
-		let hue = ms.plugins[ms.active_func].call(r.x(), r.y(), t);
+		let mut t: f32 = 0.0;
 
-		let lum = if ms.is_fft {
-			lerp_float((mags[i as usize] + ms.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
+		const TIME_OFFSET: f32 = 100000.0;
+
+		let mut hue: f32 = 0.0;
+		if ms.plugins.len() != 0 {
+			t = unsafe { TIME } / (
+					ms.plugins[ms.save_state.active_func].time_divisor
+					+ TIME_OFFSET
+					* (ms.save_state.time_dialation / 10.0)
+				)
+				+ ms.save_state.current_intensity / 100.0;
+
+			hue = ms.plugins[ms.save_state.active_func].call(r.x(), r.y(), t);
+		}
+
+
+
+		let lum = if ms.save_state.is_fft {
+			lerp_float((mags[i as usize] + ms.save_state.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())
@@ -447,23 +488,37 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 			if event.kind == notify::event::EventKind::Remove(
 				notify::event::RemoveKind::File
 			) {
+
+				let lib_name = event.paths[0]
+					.to_str().unwrap()
+					.split("/")
+					.last().unwrap();
+
 				event_count += 1;
+
+				println!("lib removed: {:?}", lib_name);
 
 				// wait for files to be fully removed
 				// and recreated by the build script
 				// kind of a weird hack because an event is fired for each File
 				// in the plugin path but I need to wait for all the files
 				// to be replaced
-				if event_count == unsafe { PLUGS_COUNT * PLUGS_COUNT } {
+				if event_count == unsafe { PLUGS_COUNT * 4 } {
+
+					println!("event count {:?}", event_count);
 
 					let mut ms = ms_.lock().unwrap();
 
 					println!("\n=========\n watch event: {:?}", event.kind);
 
+					event_count = 0;
+
 					println!("[INFO]: reloading plugins");
+					std::thread::sleep(
+						std::time::Duration::from_millis(
+							100));
 					ms.plugins.clear();
 					loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
-					event_count = 0;
 				}
 			}
 		},
