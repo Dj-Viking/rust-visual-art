@@ -1,3 +1,4 @@
+
 #[unsafe(no_mangle)]
 pub static LUM_MOD: f32 = 100.0;
 

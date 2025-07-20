@@ -5,18 +5,18 @@ use crate::MutState;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DConfig {
-	backwards:       u8,
-	fns:             Box<[u8]>,
-	intensity:       u8,
-	time_dialation:  u8,
-	decay_factor:    u8,
-	lum_mod:         u8,
-	reset:           u8,
-	is_fft:          u8,
-	modulo_param:    u8,
-	decay_param:     u8,
-	is_listening:    u8,
-	preset_btn_save: u8,
+	backwards:        u8,
+	fns:              Box<[u8]>,
+	intensity:        u8,
+	time_dialation:   u8,
+	decay_factor:     u8,
+	lum_mod:          u8,
+	reset:            u8,
+	is_fft:           u8,
+	modulo_param:     u8,
+	decay_param:      u8,
+	is_listening:     u8,
+	is_saving_preset: u8,
 }
 
 pub struct Midi {
@@ -57,17 +57,17 @@ impl Midi {
 		match channel {
 
 			// latched boolean when condition matches
-			c if c == self.cfg.backwards    && intensity == 127 => ms.is_backwards  = !ms.is_backwards,
-			c if c == self.cfg.is_fft       && intensity == 127 => ms.is_fft        = !ms.is_fft,
-			c if c == self.cfg.is_listening && intensity == 127 => ms.is_listening  = !ms.is_listening,
+			c if c == self.cfg.backwards    && intensity == 127 => ms.is_backwards      = !ms.is_backwards,
+			c if c == self.cfg.is_fft       && intensity == 127 => ms.save_state.is_fft = !ms.save_state.is_fft,
+			c if c == self.cfg.is_listening && intensity == 127 => ms.is_listening      = !ms.is_listening,
 
 			// continuous control values
-			c if c == self.cfg.intensity      => ms.current_intensity = lerp_with_range(ms.plugins[ms.active_func].intensity_range),
-			c if c == self.cfg.decay_factor   => ms.decay_factor      = lerp_with_range(1.0),
-			c if c == self.cfg.time_dialation => ms.time_dialation    = lerp_with_range(ms.plugins[ms.active_func].time_dialation_range),
-			c if c == self.cfg.lum_mod        => ms.lum_mod           = lerp_with_range(ms.plugins[ms.active_func].lum_mod),
-			c if c == self.cfg.modulo_param   => ms.modulo_param      = lerp_with_range(368.0),
-			c if c == self.cfg.decay_param    => ms.decay_param       = lerp_with_range(0.9999),
+			c if c == self.cfg.intensity      => ms.save_state.current_intensity = lerp_with_range(ms.plugins[ms.save_state.active_func].intensity_range),
+			c if c == self.cfg.decay_factor   => ms.save_state.decay_factor      = lerp_with_range(1.0),
+			c if c == self.cfg.time_dialation => ms.save_state.time_dialation    = lerp_with_range(ms.plugins[ms.save_state.active_func].time_dialation_range),
+			c if c == self.cfg.lum_mod        => ms.save_state.lum_mod           = lerp_with_range(ms.plugins[ms.save_state.active_func].lum_mod),
+			c if c == self.cfg.modulo_param   => ms.save_state.modulo_param      = lerp_with_range(368.0),
+			c if c == self.cfg.decay_param    => ms.save_state.decay_param       = lerp_with_range(0.9999),
 
 			_ if intensity == 0 => (),
 
@@ -82,7 +82,7 @@ impl Midi {
 			// updated rust. so i guess it was removed :( instead use nested match statement
 			// and if the message on certain channels that are 
 			_ if intensity == 127 => match self.cfg.fns.iter().position(|f| *f == channel) {
-				Some(i) => { ms.active_func = i; },
+				Some(i) => { ms.save_state.active_func = i; },
 				None => (),
 			},
 			_ => () 
@@ -92,7 +92,7 @@ impl Midi {
 
 		// momentary switch
 		ms.is_reset         = channel == self.cfg.reset           && intensity > 0;
-		ms.is_saving_preset = channel == self.cfg.preset_btn_save && intensity > 0;
+		ms.is_saving_preset = channel == self.cfg.is_saving       && intensity > 0;
 
 	}
 }
