@@ -5,18 +5,18 @@ use crate::MutState;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct DConfig {
-	backwards:       u8,
-	fns:             Box<[u8]>,
-	intensity:       u8,
-	time_dialation:  u8,
-	decay_factor:    u8,
-	lum_mod:         u8,
-	reset:           u8,
-	is_fft:          u8,
-	modulo_param:    u8,
-	decay_param:     u8,
-	is_listening:    u8,
-	preset_btn_save: u8,
+	backwards:        u8,
+	fns:              Box<[u8]>,
+	intensity:        u8,
+	time_dialation:   u8,
+	decay_factor:     u8,
+	lum_mod:          u8,
+	reset:            u8,
+	is_fft:           u8,
+	modulo_param:     u8,
+	decay_param:      u8,
+	is_listening:     u8,
+	is_saving_preset: u8,
 }
 
 pub struct Midi {
@@ -92,7 +92,7 @@ impl Midi {
 
 		// momentary switch
 		ms.is_reset         = channel == self.cfg.reset           && intensity > 0;
-		ms.is_saving_preset = channel == self.cfg.preset_btn_save && intensity > 0;
+		ms.is_saving_preset = channel == self.cfg.is_saving       && intensity > 0;
 
 	}
 }

@@ -1,9 +1,9 @@
 [0]
 cc = 0
-active_func = 2
+active_func = 0
 is_fft = false
-current_intensity = 2.0
-time_dialation = 6.0
+current_intensity = 0.0
+time_dialation = 0.0
 decay_factor = 0.0
 lum_mod = 0.0
 modulo_param = 0.0

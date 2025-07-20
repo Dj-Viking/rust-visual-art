@@ -139,7 +139,7 @@ fn main() {
 
 	check_args();
 
-	// get the amount of plugins as part of knowing when to reload them
+	// get the amount of plugins as part of knowing when to reload the m
 	// when the watcher detects changes
 	if let Ok(entries) = std::fs::read_dir(&*PLUGIN_PATH) {
 		for entry in entries {
@@ -167,11 +167,11 @@ fn main() {
 			is_listening:      false,
 			save_state: { // loading in the save state if we did not pass 'hmr' as a cli arg to cargo
 				if let Some(ss) = use_save_state(&ss_map) {
-					println!("using save state {:#?}", ss);
+					println!("using save state");
 					ss
 				} else { 
 					let dss = SaveState {..Default::default()};
-					println!("not using save state {:#?}", dss); 
+					println!("not using save state"); 
 					dss
 				}
 			},
@@ -441,13 +441,12 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 		if ms.is_reset { unsafe { TIME = 0.0; } }
 
-		let mut t: f32 = 0.0;
 
 		const TIME_OFFSET: f32 = 100000.0;
 
 		let mut hue: f32 = 0.0;
 		if ms.plugins.len() != 0 {
-			t = unsafe { TIME } / (
+			let t: f32 = unsafe { TIME } / (
 					ms.plugins[ms.save_state.active_func].time_divisor
 					+ TIME_OFFSET
 					* (ms.save_state.time_dialation / 10.0)
