@@ -4,11 +4,12 @@
 # these are ordered by the sorted file names of the plugin functions 
 # the file prefixed by 1_ is the first item in this function
 fns = [
-	24, # M Button
-	25, # N Button
-	26, # O Button
-	27, # P Button
-	31  # L Button
+	24, # M Button Spiral
+	25, # N Button V2
+	26, # O Button Waves
+	27, # P Button Audio
+	31  # L Button Solid
+	    # ??       Something
 ]
 intensity        = 16 # fader_1
 decay_factor     = 17 # fader_2

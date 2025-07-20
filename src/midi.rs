@@ -48,10 +48,6 @@ impl Midi {
 		})
 	}
 
-	fn handle_update_preset_mapping() {
-
-	}
-
 	pub fn handle_msg(&self, me: MidiEvent, ms: &mut MutState) {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
@@ -83,7 +79,13 @@ impl Midi {
 			c if c == self.cfg.lum_mod          => ms.save_state.lum_mod           = lerp_with_range(ms.plugins[ms.save_state.active_func].lum_mod),
 			c if c == self.cfg.modulo_param     => ms.save_state.modulo_param      = lerp_with_range(368.0),
 			c if c == self.cfg.decay_param      => ms.save_state.decay_param       = lerp_with_range(0.9999),
-			_ if intensity == 0 => (),
+
+			_ if intensity == 0 => {
+				if ms.is_listening {
+					println!("set save_state.cc to {:?}", channel);
+					ms.save_state.cc = channel;
+				}
+			},
 
 			// any other messages are probably unassigned config values 
 			// or possibly the plugin function library collection indicies
@@ -99,12 +101,7 @@ impl Midi {
 				Some(i) => { ms.save_state.active_func = i; },
 				None => (),
 			},
-			_ => {
-				if ms.is_listening {
-					println!("set save_state.cc to {:?}", channel);
-					ms.save_state.cc = channel;
-				}
-			}
+			_ => (),
 		}
 
 

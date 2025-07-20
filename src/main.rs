@@ -50,6 +50,7 @@ struct MutState {
 	is_listening:      bool,
 	plugins:           Vec<loading::Plugin>,
 	save_state:        SaveState,
+	user_cc_map:       HashMap<String, SaveState>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -81,6 +82,12 @@ impl SaveState {
 
 }
 
+// TODO: need path to user defined save states
+static USER_SS_CONFIG: LazyLock<&'static str> =
+	LazyLock::new(|| std::env::var("USER_SS_CONFIG_PATH")
+		.map(|s| &*Box::leak(s.into_boxed_str()))
+		.unwrap_or("user_ss_config"));
+
 static SAVE_STATES: LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
@@ -101,6 +108,38 @@ static mut PLUGS_COUNT: u8 = 0;
 
 static mut HMR_ON: bool = false;
 
+// if enabled then fill the MutState with the user_cc_map from their own toml file
+static mut USER_SS_ON: bool = false;
+
+fn use_user_defined_cc_mappings () 
+	-> Result<HashMap<String, SaveState>, Box<dyn std::error::Error>>
+{
+	let mut hm = HashMap::<String, SaveState>::new();
+	// read dir for all files
+	// parse all files into a hashmap with hashkeys are the cc number for the mapping
+	// and the values are the SaveState structs
+	
+	std::fs::read_dir(*crate::USER_SS_CONFIG)
+		?.into_iter().for_each(|d| {
+			//parse the toml at the dir path	
+			let mut config: HashMap<String, SaveState> = 
+				toml::from_str(
+					&std::fs::read_to_string(d.unwrap().path()).unwrap()
+				).unwrap_or_else(|e| {
+					eprintln!("Error reading save_state file: {e}");
+					std::process::exit(1);
+				});
+			
+			hm.insert(
+				config.keys().last().unwrap().to_string(),
+				config.values().last().unwrap().clone()
+			);
+		});
+
+	Ok(hm)
+}
+
+
 fn check_args() {
 
 	// list midi devices in terminal
@@ -114,9 +153,13 @@ fn check_args() {
 	if std::env::args().skip(1).any(|a| a == "hmr") {
 		unsafe { HMR_ON = true; };
 	}
+
+	if std::env::args().skip(1).any(|a| a == "pss") {
+		unsafe { USER_SS_ON = true; };
+	}
 }
 
-fn use_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
+fn use_default_user_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
 	println!("ss map {:#?}: ", ss_map);
 	if unsafe { !HMR_ON } {
 		return Some(SaveState {
@@ -166,13 +209,28 @@ fn main() {
 			},
 			is_listening:      false,
 			save_state: { // loading in the save state if we did not pass 'hmr' as a cli arg to cargo
-				if let Some(ss) = use_save_state(&ss_map) {
+				if let Some(ss) = use_default_user_save_state(&ss_map) {
 					println!("using save state");
 					ss
 				} else { 
 					let dss = SaveState {..Default::default()};
 					println!("not using save state"); 
 					dss
+				}
+			},
+			// TODO: once I have this map, how should midi msg handler 
+			// know that the cc coming in is for changing the function?
+			//
+			// midi msg handler will need to know which cc's
+			// are being used in the current 'session' as loaded by the user
+			user_cc_map: {
+				if let Ok(cc_map) = use_user_defined_cc_mappings() {
+					cc_map
+				} else {
+					let dss = SaveState {..Default::default()};
+					let mut hm = HashMap::<String, SaveState>::new();
+					hm.insert("0".to_string(), dss);
+					hm
 				}
 			},
 			..Default::default()
@@ -381,13 +439,36 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 		// instead of saving over the existing one
 		// should the save states be committed since they are user defined and can change
 		// frequently?
-		let mut tomlstring: String = String::from(format!("[{}]", ms.save_state.cc));
+		let mut tomlstring: String = String::from(format!("[{}]", { 
+			ms.save_state.cc 
+		}));
 
 		let toml = toml::to_string(&ss).unwrap();
 
 		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
 
-		let _ = std::fs::write("save_states.toml", tomlstring);
+		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
+			&& unsafe { USER_SS_ON }
+		{
+			// make user ss folder if not exist
+			if let Ok(_) = std::fs::read_dir("user_ss_config") {
+				println!("user ss folder exists\n\tsaving new preset on cc {:?}", ms.save_state.cc);
+				let _ = std::fs::write(
+					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
+					tomlstring
+				);
+			} else {
+				println!("user ss folder did not exist\n\tsaving new preset on cc {:?}", ms.save_state.cc);
+				let _ = std::fs::create_dir("user_ss_config");
+				let _ = std::fs::write(
+					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
+					tomlstring
+				);
+			}
+		} else { // save to the default state file
+			// TODO: rename to default_user_save_state
+			let _ = std::fs::write("save_states.toml", tomlstring);
+		}
 
 		println!("is_listening false");
 		ms.is_listening = false;
