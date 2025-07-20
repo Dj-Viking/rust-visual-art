@@ -17,9 +17,8 @@ time_dialation   = 19 # fader_4
 reset            = 36 # A Button
 backwards        = 37 # B Button
 is_fft           = 38 # C Button
-is_listening     = 39 # D Button
-is_saving_preset = 40 # E Button
-preset_1_cc      = 0  # ???
+is_listening     = 52 # 1_encoder_push
+is_saving_preset = 53 # 2_encoder_push
 decay_param      = 10 # 3_middle_knob
 modulo_param     = 14 # 3_bottom_knob
 
@@ -40,4 +39,3 @@ decay_param      = 0
 modulo_param     = 0
 is_listening     = 0
 is_saving_preset = 0
-preset_1_cc      = 0

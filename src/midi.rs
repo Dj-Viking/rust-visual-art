@@ -48,6 +48,10 @@ impl Midi {
 		})
 	}
 
+	fn handle_update_preset_mapping() {
+
+	}
+
 	pub fn handle_msg(&self, me: MidiEvent, ms: &mut MutState) {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
@@ -57,18 +61,28 @@ impl Midi {
 		match channel {
 
 			// latched boolean when condition matches
-			c if c == self.cfg.backwards    && intensity == 127 => ms.is_backwards      = !ms.is_backwards,
-			c if c == self.cfg.is_fft       && intensity == 127 => ms.save_state.is_fft = !ms.save_state.is_fft,
-			c if c == self.cfg.is_listening && intensity == 127 => ms.is_listening      = !ms.is_listening,
+			c if c == self.cfg.backwards        && intensity == 127 => ms.is_backwards      = !ms.is_backwards,
+			c if c == self.cfg.is_fft           && intensity == 127 => ms.save_state.is_fft = !ms.save_state.is_fft,
+
+			c if c == self.cfg.is_listening     && intensity == 127 => {
+				println!("is_listening - true");
+				ms.is_listening = !ms.is_listening;
+			},
+			c if c == self.cfg.is_saving_preset && intensity == 127 => {
+				println!("is_saving_preset - true");
+			},
+			c if c == self.cfg.is_saving_preset && intensity == 0   => {
+				println!("is_saving_preset - false");
+			}
+
 
 			// continuous control values
-			c if c == self.cfg.intensity      => ms.save_state.current_intensity = lerp_with_range(ms.plugins[ms.save_state.active_func].intensity_range),
-			c if c == self.cfg.decay_factor   => ms.save_state.decay_factor      = lerp_with_range(1.0),
-			c if c == self.cfg.time_dialation => ms.save_state.time_dialation    = lerp_with_range(ms.plugins[ms.save_state.active_func].time_dialation_range),
-			c if c == self.cfg.lum_mod        => ms.save_state.lum_mod           = lerp_with_range(ms.plugins[ms.save_state.active_func].lum_mod),
-			c if c == self.cfg.modulo_param   => ms.save_state.modulo_param      = lerp_with_range(368.0),
-			c if c == self.cfg.decay_param    => ms.save_state.decay_param       = lerp_with_range(0.9999),
-
+			c if c == self.cfg.intensity        => ms.save_state.current_intensity = lerp_with_range(ms.plugins[ms.save_state.active_func].intensity_range),
+			c if c == self.cfg.decay_factor     => ms.save_state.decay_factor      = lerp_with_range(1.0),
+			c if c == self.cfg.time_dialation   => ms.save_state.time_dialation    = lerp_with_range(ms.plugins[ms.save_state.active_func].time_dialation_range),
+			c if c == self.cfg.lum_mod          => ms.save_state.lum_mod           = lerp_with_range(ms.plugins[ms.save_state.active_func].lum_mod),
+			c if c == self.cfg.modulo_param     => ms.save_state.modulo_param      = lerp_with_range(368.0),
+			c if c == self.cfg.decay_param      => ms.save_state.decay_param       = lerp_with_range(0.9999),
 			_ if intensity == 0 => (),
 
 			// any other messages are probably unassigned config values 
@@ -85,9 +99,13 @@ impl Midi {
 				Some(i) => { ms.save_state.active_func = i; },
 				None => (),
 			},
-			_ => () 
+			_ => {
+				if ms.is_listening {
+					println!("set save_state.cc to {:?}", channel);
+					ms.save_state.cc = channel;
+				}
+			}
 		}
-
 
 
 		// momentary switch
