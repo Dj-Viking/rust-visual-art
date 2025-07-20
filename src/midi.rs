@@ -91,8 +91,8 @@ impl Midi {
 
 
 		// momentary switch
-		ms.is_reset         = channel == self.cfg.reset           && intensity > 0;
-		ms.is_saving_preset = channel == self.cfg.is_saving       && intensity > 0;
+		ms.is_reset         = channel == self.cfg.reset            && intensity > 0;
+		ms.is_saving_preset = channel == self.cfg.is_saving_preset && intensity > 0;
 
 	}
 }
