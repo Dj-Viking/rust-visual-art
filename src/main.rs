@@ -122,7 +122,7 @@ fn use_user_defined_cc_mappings ()
 	std::fs::read_dir(*crate::USER_SS_CONFIG)
 		?.into_iter().for_each(|d| {
 			//parse the toml at the dir path	
-			let mut config: HashMap<String, SaveState> = 
+			let config: HashMap<String, SaveState> = 
 				toml::from_str(
 					&std::fs::read_to_string(d.unwrap().path()).unwrap()
 				).unwrap_or_else(|e| {
