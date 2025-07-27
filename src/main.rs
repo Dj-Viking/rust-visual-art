@@ -179,10 +179,7 @@ fn use_default_user_save_state(ss_map: &HashMap<String, SaveState>) -> Option<Sa
 	None
 }
 
-fn main() {
-
-	check_args();
-
+fn check_libs() {
 	// get the amount of plugins as part of knowing when to reload the m
 	// when the watcher detects changes
 	if let Ok(entries) = std::fs::read_dir(&*PLUGIN_PATH) {
@@ -191,9 +188,25 @@ fn main() {
 				unsafe { PLUGS_COUNT += 1 };
 			}
 		}
+
+		println!("plug count {}", unsafe { PLUGS_COUNT });
+	} else {
+		println!("no target/libs dir existed...");
+		println!("recompiling...");
+		let status = std::process::Command::new("./build_script/target/debug/build_script")
+			.output()
+			.unwrap();
+		println!("{}", std::str::from_utf8(&status.stdout).unwrap());
+		println!("{}", std::str::from_utf8(&status.stderr).unwrap());
+		assert!(status.status.success());
 	}
 
-	println!("plug count {}", unsafe { PLUGS_COUNT });
+}
+
+fn main() {
+
+	check_args();
+	check_libs();
 
 	let init = |a: &App| {
 		let ss_map: HashMap<String, SaveState> =
