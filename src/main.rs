@@ -16,6 +16,7 @@ use ringbuf::HeapRb;
 mod midi;
 mod loading;
 mod audio_processor;
+mod utils;
 
 struct InputModel {
 	producer: ringbuf::HeapProd<f32>,
@@ -88,17 +89,17 @@ static USER_SS_CONFIG: LazyLock<&'static str> =
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("user_ss_config"));
 
-static SAVE_STATES: LazyLock<&'static str> =
+static SAVE_STATES:    LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("save_states.toml"));
 
-static CONF_FILE:   LazyLock<&'static str> =
-	LazyLock::new(|| std::env::var("CONF_FILE")
+static CONF_FILE:      LazyLock<&'static str> =
+	LazyLock::new(|| std::env::var("CONF_FILE_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("config.toml"));
 
-static PLUGIN_PATH: LazyLock<&'static str> =
+static PLUGIN_PATH:    LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("PLUGIN_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("target/libs"));
@@ -109,7 +110,7 @@ static mut PLUGS_COUNT: u8 = 0;
 static mut HMR_ON: bool = false;
 
 // if enabled then fill the MutState with the user_cc_map from their own toml file
-static mut USER_SS_ON: bool = false;
+pub static mut USER_SS_ON: bool = false;
 
 fn use_user_defined_cc_mappings () 
 	-> Result<HashMap<String, SaveState>, Box<dyn std::error::Error>>
@@ -120,11 +121,11 @@ fn use_user_defined_cc_mappings ()
 	// and the values are the SaveState structs
 	
 	std::fs::read_dir(*crate::USER_SS_CONFIG)
-		?.into_iter().for_each(|d| {
+		?.into_iter().for_each(|path| {
 			//parse the toml at the dir path	
 			let config: HashMap<String, SaveState> = 
 				toml::from_str(
-					&std::fs::read_to_string(d.unwrap().path()).unwrap()
+					&std::fs::read_to_string(path.unwrap().path()).unwrap()
 				).unwrap_or_else(|e| {
 					eprintln!("Error reading save_state file: {e}");
 					std::process::exit(1);
@@ -432,47 +433,7 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 	}
 
 
-	if ms.is_listening && ms.is_saving_preset {
-		let ss = SaveState::new(&mut ms);
-
-		// TODO: if the CC was different than the current one then save a new file
-		// instead of saving over the existing one
-		// should the save states be committed since they are user defined and can change
-		// frequently?
-		let mut tomlstring: String = String::from(format!("[{}]", { 
-			ms.save_state.cc 
-		}));
-
-		let toml = toml::to_string(&ss).unwrap();
-
-		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
-
-		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
-			&& unsafe { USER_SS_ON }
-		{
-			// make user ss folder if not exist
-			if let Ok(_) = std::fs::read_dir("user_ss_config") {
-				println!("user ss folder exists\n\tsaving new preset on cc {:?}", ms.save_state.cc);
-				let _ = std::fs::write(
-					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
-					tomlstring
-				);
-			} else {
-				println!("user ss folder did not exist\n\tsaving new preset on cc {:?}", ms.save_state.cc);
-				let _ = std::fs::create_dir("user_ss_config");
-				let _ = std::fs::write(
-					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
-					tomlstring
-				);
-			}
-		} else { // save to the default state file
-			// TODO: rename to default_user_save_state
-			let _ = std::fs::write("save_states.toml", tomlstring);
-		}
-
-		println!("is_listening false");
-		ms.is_listening = false;
-	}
+	utils::handle_save_preset(&mut ms);
 	// println!("============");
 	// f32::memprint_block(&ap.buffer);
 }
