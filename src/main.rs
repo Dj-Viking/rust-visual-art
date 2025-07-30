@@ -398,8 +398,8 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| {
 		println!("active func {:?}", ms.save_state.active_func);
 		match ms.plugins.len().cmp(&(n.clone() as usize)) {
-		std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
-		_ => ms.save_state.active_func = n as usize,
+			std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
+			_ => ms.save_state.active_func = n as usize,
 		}
 	};
 
