@@ -83,7 +83,6 @@ impl SaveState {
 
 }
 
-// TODO: need path to user defined save states
 static USER_SS_CONFIG: LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("USER_SS_CONFIG_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
