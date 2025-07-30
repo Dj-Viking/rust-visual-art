@@ -16,6 +16,7 @@ use ringbuf::HeapRb;
 mod midi;
 mod loading;
 mod audio_processor;
+mod utils;
 
 struct InputModel {
 	producer: ringbuf::HeapProd<f32>,
@@ -50,6 +51,7 @@ struct MutState {
 	is_listening:      bool,
 	plugins:           Vec<loading::Plugin>,
 	save_state:        SaveState,
+	user_cc_map:       HashMap<String, SaveState>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -81,17 +83,22 @@ impl SaveState {
 
 }
 
-static SAVE_STATES: LazyLock<&'static str> =
+static USER_SS_CONFIG: LazyLock<&'static str> =
+	LazyLock::new(|| std::env::var("USER_SS_CONFIG_PATH")
+		.map(|s| &*Box::leak(s.into_boxed_str()))
+		.unwrap_or("user_ss_config"));
+
+static SAVE_STATES:    LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("save_states.toml"));
 
-static CONF_FILE:   LazyLock<&'static str> =
-	LazyLock::new(|| std::env::var("CONF_FILE")
+static CONF_FILE:      LazyLock<&'static str> =
+	LazyLock::new(|| std::env::var("CONF_FILE_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("config.toml"));
 
-static PLUGIN_PATH: LazyLock<&'static str> =
+static PLUGIN_PATH:    LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("PLUGIN_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("target/libs"));
@@ -100,6 +107,38 @@ const SAMPLES: usize = 4096;
 static mut PLUGS_COUNT: u8 = 0;
 
 static mut HMR_ON: bool = false;
+
+// if enabled then fill the MutState with the user_cc_map from their own toml file
+pub static mut USER_SS_ON: bool = false;
+
+fn use_user_defined_cc_mappings () 
+	-> Result<HashMap<String, SaveState>, Box<dyn std::error::Error>>
+{
+	let mut hm = HashMap::<String, SaveState>::new();
+	// read dir for all files
+	// parse all files into a hashmap with hashkeys are the cc number for the mapping
+	// and the values are the SaveState structs
+	
+	std::fs::read_dir(*crate::USER_SS_CONFIG)
+		?.into_iter().for_each(|path| {
+			//parse the toml at the dir path	
+			let config: HashMap<String, SaveState> = 
+				toml::from_str(
+					&std::fs::read_to_string(path.unwrap().path()).unwrap()
+				).unwrap_or_else(|e| {
+					eprintln!("Error reading save_state file: {e}");
+					std::process::exit(1);
+				});
+			
+			hm.insert(
+				config.keys().last().unwrap().to_string(),
+				config.values().last().unwrap().clone()
+			);
+		});
+
+	Ok(hm)
+}
+
 
 fn check_args() {
 
@@ -114,9 +153,13 @@ fn check_args() {
 	if std::env::args().skip(1).any(|a| a == "hmr") {
 		unsafe { HMR_ON = true; };
 	}
+
+	if std::env::args().skip(1).any(|a| a == "pss") {
+		unsafe { USER_SS_ON = true; };
+	}
 }
 
-fn use_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
+fn use_default_user_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
 	println!("ss map {:#?}: ", ss_map);
 	if unsafe { !HMR_ON } {
 		return Some(SaveState {
@@ -179,13 +222,28 @@ fn main() {
 			},
 			is_listening:      false,
 			save_state: { // loading in the save state if we did not pass 'hmr' as a cli arg to cargo
-				if let Some(ss) = use_save_state(&ss_map) {
+				if let Some(ss) = use_default_user_save_state(&ss_map) {
 					println!("using save state");
 					ss
 				} else { 
 					let dss = SaveState {..Default::default()};
 					println!("not using save state"); 
 					dss
+				}
+			},
+			// TODO: once I have this map, how should midi msg handler 
+			// know that the cc coming in is for changing the function?
+			//
+			// midi msg handler will need to know which cc's
+			// are being used in the current 'session' as loaded by the user
+			user_cc_map: {
+				if let Ok(cc_map) = use_user_defined_cc_mappings() {
+					cc_map
+				} else {
+					let dss = SaveState {..Default::default()};
+					let mut hm = HashMap::<String, SaveState>::new();
+					hm.insert("0".to_string(), dss);
+					hm
 				}
 			},
 			..Default::default()
@@ -339,8 +397,8 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| {
 		println!("active func {:?}", ms.save_state.active_func);
 		match ms.plugins.len().cmp(&(n.clone() as usize)) {
-		std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
-		_ => ms.save_state.active_func = n as usize,
+			std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
+			_ => ms.save_state.active_func = n as usize,
 		}
 	};
 
@@ -387,24 +445,7 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 	}
 
 
-	if ms.is_listening && ms.is_saving_preset {
-		let ss = SaveState::new(&mut ms);
-
-		// TODO: if the CC was different than the current one then save a new file
-		// instead of saving over the existing one
-		// should the save states be committed since they are user defined and can change
-		// frequently?
-		let mut tomlstring: String = String::from(format!("[{}]", ms.save_state.cc));
-
-		let toml = toml::to_string(&ss).unwrap();
-
-		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
-
-		let _ = std::fs::write("save_states.toml", tomlstring);
-
-		println!("is_listening false");
-		ms.is_listening = false;
-	}
+	utils::handle_save_preset(&mut ms);
 	// println!("============");
 	// f32::memprint_block(&ap.buffer);
 }
