@@ -1,53 +1,61 @@
 use portmidi::{DeviceInfo, MidiEvent};
 use std::collections::HashMap;
 
+use std::sync::{MutexGuard};
+
 use crate::MutState;
 
-#[derive(serde::Deserialize, serde::Serialize)]
-struct DConfig {
-	backwards:        u8,
-	fns:              Box<[u8]>,
-	intensity:        u8,
-	time_dialation:   u8,
-	decay_factor:     u8,
-	lum_mod:          u8,
-	reset:            u8,
-	is_fft:           u8,
-	modulo_param:     u8,
-	decay_param:      u8,
-	is_listening:     u8,
-	is_saving_preset: u8,
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct DeviceConfig {
+	pub backwards:         u8,
+	pub fns:               Box<[u8]>,
+	pub intensity:         u8,
+	pub time_dialation:    u8,
+	pub decay_factor:      u8,
+	pub lum_mod:           u8,
+	pub reset:             u8,
+	pub is_fft:            u8,
+	pub modulo_param:      u8,
+	pub decay_param:       u8,
+	pub is_listening_midi: u8,
+	pub is_saving_preset:  u8,
 }
 
 pub struct Midi {
 	pub dev: DeviceInfo,
-	cfg: DConfig,
+	cfg: DeviceConfig,
 }
 
 impl Midi {
 	pub fn new(pm_ctx: &portmidi::PortMidi) -> Result<Self, Box<dyn std::error::Error>> {
 		let devices = pm_ctx.devices()?;
-		let mut config: HashMap<String, DConfig> = 
+		let mut config: HashMap<String, DeviceConfig> = 
 			toml::from_str(&std::fs::read_to_string(*crate::CONF_FILE).unwrap()).unwrap_or_else(|e| {
-				eprintln!("Error reading config file: {e}");
+				eprintln!("[MIDI]: Error reading config file: {e}");
 				std::process::exit(1);
 			});
+
+		// TODO: rename config.toml to midi_config.toml
+		println!("loaded midi config.toml {:#?}", config);
 
 		let dev = devices.into_iter()
 			.find(|d| 
 				d.direction() == portmidi::Direction::Input 
 				&& config.keys().any(|n| n == d.name()))
 			.unwrap_or_else(|| {
-				eprintln!("No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
+				eprintln!("[MIDI]: No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
 				std::process::exit(1);
 			});
 
+
+
 		Ok(Self {
 			cfg: unsafe { config.remove(dev.name()).unwrap_unchecked() },
-			dev,
+			dev
 		})
 	}
 
+	// TODO: setup a debugger?? :o
 	pub fn handle_msg(&self, me: MidiEvent, ms: &mut MutState) {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
@@ -60,17 +68,16 @@ impl Midi {
 			c if c == self.cfg.backwards        && intensity == 127 => ms.is_backwards      = !ms.is_backwards,
 			c if c == self.cfg.is_fft           && intensity == 127 => ms.save_state.is_fft = !ms.save_state.is_fft,
 
-			c if c == self.cfg.is_listening     && intensity == 127 => {
-				println!("is_listening - true");
-				ms.is_listening = !ms.is_listening;
+			c if c == self.cfg.is_listening_midi     && intensity == 127 => {
+				println!("[MIDI]: is_listening_midi - true");
+				ms.is_listening_midi = !ms.is_listening_midi;
 			},
 			c if c == self.cfg.is_saving_preset && intensity == 127 => {
-				println!("is_saving_preset - true");
+				println!("[MIDI]: is_saving_preset - true");
 			},
 			c if c == self.cfg.is_saving_preset && intensity == 0   => {
-				println!("is_saving_preset - false");
+				println!("[MIDI]: is_saving_preset - false");
 			}
-
 
 			// continuous control values
 			c if c == self.cfg.intensity        => ms.save_state.current_intensity = lerp_with_range(ms.plugins[ms.save_state.active_func].intensity_range),
@@ -80,28 +87,57 @@ impl Midi {
 			c if c == self.cfg.modulo_param     => ms.save_state.modulo_param      = lerp_with_range(368.0),
 			c if c == self.cfg.decay_param      => ms.save_state.decay_param       = lerp_with_range(0.9999),
 
-			_ if intensity == 0 => {
-				if ms.is_listening {
-					println!("set save_state.cc to {:?}", channel);
-					ms.save_state.cc = channel;
-				}
-			},
+			// do nothing on zero for now...
+			// because intensity is being used for division
+			// better not allow division by zero or we'll panic!
+			_ if intensity == 0 => (),
 
 			// any other messages are probably unassigned config values 
 			// or possibly the plugin function library collection indicies
 			// latched on function to be activated from plugins
 			// unfortunately this requires #[feature(if_let_guard)] 
 			//
+			// based on this PR it looks like it was temporarily there but they're trying to get it
+			// into stable but the guy originally working on it is going on military service for at least a
+			// year https://github.com/rust-lang/rust/pull/141295 
+			//
 			// c if let Some(i) = self.cfg.fns.iter().position(|&f| f == c) => ms.active_func = i,
 			//
 			// but it stopped working after I
 			// updated rust. so i guess it was removed :( instead use nested match statement
-			// and if the message on certain channels that are 
-			_ if intensity == 127 => match self.cfg.fns.iter().position(|f| *f == channel) {
-				Some(i) => { ms.save_state.active_func = i; },
-				None => (),
+			// and if the message on certain channels that are matching the function slice of
+			// function locations in memory so i can poke at and reassign the visual patch
+			//
+			_ if intensity == 127 => { 
+				// only setting the ms active_func if the cc was in the list of well_known_ccs or
+				// the DeviceConfig control values
+				if ms.well_known_ccs.iter().any(|cc| *cc == channel) {
+					println!("[MIDI]: switching function midi channel used {:?}", channel);
+					match self.cfg.fns.iter().position(|f| *f == channel) {
+						Some(i) => { ms.save_state.active_func = i; },
+						None => (), 
+					}
+				} else {
+					// cc was not a device config cc - it's a user defined cc for a visual patch
+					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {
+						println!("[MIDI]: setting fn based on user cc mapping? {:?}", channel);
+						// recall the entire save_state to the cc mapped state value structure(s)
+						ms.save_state = ms.user_cc_map[&*format!("{}", channel)].clone()
+					} else {
+						// only if we're not listening as to not override it
+						// or accidentally try to index into the cc map with a midi cc value that isn't saved yet
+						// we were listening so let's override it - user is probably saving any
+						// new patch with the same cc value
+						println!("[MIDI]: set save_state.cc to {:?}", channel);
+						ms.save_state.cc = channel;
+					}
+				}
 			},
-			_ => (),
+
+			_ => {
+				// not mapped by the config or the well-known cc list
+				println!("[MIDI][UNASSIGNED?]: catch-all-match-arm got bogus amogus channel? {:?}", channel);
+			},
 		}
 
 		// momentary switch

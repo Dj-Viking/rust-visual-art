@@ -11,17 +11,17 @@ fns = [
 	31  # L Button Solid
 	    # ??       Something
 ]
-intensity        = 16 # fader_1
-decay_factor     = 17 # fader_2
-lum_mod          = 18 # fader_3
-time_dialation   = 19 # fader_4
-reset            = 36 # A Button
-backwards        = 37 # B Button
-is_fft           = 38 # C Button
-is_listening     = 52 # 1_encoder_push
-is_saving_preset = 53 # 2_encoder_push
-decay_param      = 10 # 3_middle_knob
-modulo_param     = 14 # 3_bottom_knob
+intensity         = 16 # fader_1
+decay_factor      = 17 # fader_2
+lum_mod           = 18 # fader_3
+time_dialation    = 19 # fader_4
+reset             = 36 # A Button
+backwards         = 37 # B Button
+is_fft            = 38 # C Button
+is_listening_midi = 52 # 1_encoder_push
+is_saving_preset  = 53 # 2_encoder_push
+decay_param       = 10 # 3_middle_knob
+modulo_param      = 14 # 3_bottom_knob
 
 ["Arturia KeyLab Essential 61 MID"]
 fns = [
@@ -29,14 +29,14 @@ fns = [
 	41,
 	26
 ]
-intensity        = 73
-decay_factor     = 0
-lum_mod          = 0
-time_dialation   = 19
-reset            = 0
-backwards        = 0
-is_fft           = 0
-decay_param      = 0
-modulo_param     = 0
-is_listening     = 0
-is_saving_preset = 0
+intensity         = 73
+decay_factor      = 0
+lum_mod           = 0
+time_dialation    = 19
+reset             = 0
+backwards         = 0
+is_fft            = 0
+decay_param       = 0
+modulo_param      = 0
+is_listening_midi = 0
+is_saving_preset  = 0

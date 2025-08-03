@@ -1,0 +1,10 @@
+[0]
+cc = 30
+active_func = 0
+is_fft = false
+current_intensity = 0.0
+time_dialation = 0.15748031437397003
+decay_factor = 0.05511811003088951
+lum_mod = 0.0
+modulo_param = 2.8976378440856934
+decay_param = 0.9132944345474243

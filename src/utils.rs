@@ -1,44 +1,122 @@
 use std::sync::{MutexGuard};
-pub fn handle_save_preset(ms: &mut MutexGuard<crate::MutState>) -> () {
-	if ms.is_listening && ms.is_saving_preset {
+use portmidi::PortMidi;
+use std::collections::HashMap;
+
+// returns the midiccs needed for main () entrypoint
+// i know im reading the file twice but oh well
+// i can't as easily pass mutstate around due to borrow-checker ownership rules
+pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+
+	let devices = pm_ctx.devices()?;
+
+	let config: HashMap<String, crate::midi::DeviceConfig> = 
+		toml::from_str(&std::fs::read_to_string(*crate::CONF_FILE).unwrap()).unwrap_or_else(|e| {
+			eprintln!("[MIDI]: Error reading config file: {e}");
+			std::process::exit(1);
+		});
+
+	// TODO: rename config.toml to midi_config.toml
+	println!("loaded midi config.toml {:#?}", config);
+
+	// this finds the device of the first controller it finds in the list 
+	// which is connected to the computer but this only allows one controller
+	// to be used at a time when using the app
+	//
+	// TODO: how can we have multiple controllers at once?
+	let dev = devices.into_iter()
+		.find(|d| 
+			d.direction() == portmidi::Direction::Input 
+			&& config.keys().any(|n| n == d.name()))
+		.unwrap_or_else(|| {
+			eprintln!("[MIDI]: No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
+			std::process::exit(1);
+		});
+
+	let mut midi_ccs = config[dev.name()].fns.clone().to_vec();
+
+	midi_ccs.push(config[dev.name()].intensity);
+	midi_ccs.push(config[dev.name()].decay_factor);
+	midi_ccs.push(config[dev.name()].lum_mod);
+	midi_ccs.push(config[dev.name()].time_dialation);
+	midi_ccs.push(config[dev.name()].reset);
+	midi_ccs.push(config[dev.name()].backwards);
+	midi_ccs.push(config[dev.name()].is_fft);
+	midi_ccs.push(config[dev.name()].is_listening_midi);
+	midi_ccs.push(config[dev.name()].is_saving_preset);
+	midi_ccs.push(config[dev.name()].decay_param);
+	midi_ccs.push(config[dev.name()].modulo_param);
+
+	Ok(midi_ccs)
+}
+
+pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
+	if ms.is_saving_preset && ms.is_listening_midi {
 		let ss = crate::SaveState::new(ms);
 
-		// TODO: if the CC was different than the current one then save a new file
+		// todo: if the cc was different than the current one then save a new file
 		// instead of saving over the existing one
-		// should the save states be committed since they are user defined and can change
-		// frequently?
 		let mut tomlstring: String = String::from(format!("[{}]", { 
 			ms.save_state.cc 
 		}));
 
-		let toml = toml::to_string(&ss).unwrap();
+		let ss_ = ss.clone();
+		let toml = toml::to_string(&ss_).unwrap();
+
+		// place into the existing ms.user_cc_map
+		let ms_ss_cc = ms.save_state.cc.clone();
+		let ss_ = ss.clone();
+		ms.user_cc_map.insert(format!("{}", ms_ss_cc), ss_);
 
 		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
 
+		println!("[UTILS][MIDI]: what is cc here in save midi {}", ms.save_state.cc);
+
+		// if we're not saving default it's for midi cc map
 		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
-			&& unsafe { crate::USER_SS_ON }
 		{
 			// make user ss folder if not exist
 			if let Ok(_) = std::fs::read_dir("user_ss_config") {
-				println!("user ss folder exists\n\tsaving new preset on cc {:?}", ms.save_state.cc);
+				println!("[UTILS][KEYS]: user ss folder exists\n\tsaving new preset on cc {:?}", ms.save_state.cc);
 				let _ = std::fs::write(
 					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
 					tomlstring
 				);
 			} else {
-				println!("user ss folder did not exist\n\tsaving new preset on cc {:?}", ms.save_state.cc);
+				println!("[UTILS][KEYS]: user ss folder did not exist\n\tsaving new preset on cc {:?}", ms.save_state.cc);
 				let _ = std::fs::create_dir("user_ss_config");
 				let _ = std::fs::write(
-					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
+					format!(
+						"user_ss_config/{}_save_state.toml", 
+						ms.save_state.cc), 
 					tomlstring
 				);
 			}
-		} else { // save to the default state file
-			// TODO: rename to default_user_save_state
-			let _ = std::fs::write("save_states.toml", tomlstring);
 		}
 
-		println!("is_listening false");
-		ms.is_listening = false;
+		println!("[UTILS][KEYS]: is_listening_midi false");
+		ms.is_listening_midi = false;
+	}
+
+}
+pub fn handle_save_preset_keys(ms: &mut MutexGuard<crate::MutState>) -> () {
+	if ms.is_saving_preset && ms.is_listening_keys {
+		let ss = crate::SaveState::new(ms);
+
+		// todo: if the cc was different than the current one then save a new file
+		// instead of saving over the existing one
+		let mut tomlstring: String = String::from(format!("[{}]", { "0" }));
+
+		let toml = toml::to_string(&ss).unwrap();
+
+		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
+
+		println!("[UTILS][KEYS]: what is cc here in save keys {:?}", ms.save_state.cc);
+
+		// save to the default state file
+		// use this one for the is_listening_keys control
+		let _ = std::fs::write("default_user_save_state.toml", tomlstring);
+
+		println!("[UTILS][KEYS]: is_listening_keys false");
+		ms.is_listening_keys = false;
 	}
 }

@@ -1,2 +1,3 @@
 target
 *_save_state.toml
+!default_user_save_state.toml

@@ -43,15 +43,18 @@ struct State {
 	audio_processor: Arc<Mutex<audio_processor::AudioProcessor>>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct MutState {
-	is_backwards:      bool,
-	is_reset:          bool,
-	is_saving_preset:  bool,
-	is_listening:      bool,
-	plugins:           Vec<loading::Plugin>,
-	save_state:        SaveState,
-	user_cc_map:       HashMap<String, SaveState>,
+	is_backwards:       bool,
+	is_reset:           bool,
+	is_saving_preset:   bool,
+	is_listening_midi:  bool,
+	is_listening_keys:  bool,
+	plugins:            Vec<loading::Plugin>,
+	save_state:         SaveState,
+	user_cc_map:        HashMap<String, SaveState>,
+	midi_config_fn_ccs: Vec<u8>, // assigned by the user
+	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -71,7 +74,7 @@ impl SaveState {
 		Self {
 			cc:                ms.save_state.cc,
 			active_func:       ms.save_state.active_func,
-			is_fft:            ms.save_state.is_fft, 
+			is_fft:            ms.save_state.is_fft,
 			current_intensity: ms.save_state.current_intensity,
 			time_dialation:    ms.save_state.time_dialation,
 			decay_factor:      ms.save_state.decay_factor,
@@ -80,7 +83,6 @@ impl SaveState {
 			decay_param:       ms.save_state.decay_param,
 		}
 	}
-
 }
 
 static USER_SS_CONFIG: LazyLock<&'static str> =
@@ -91,7 +93,7 @@ static USER_SS_CONFIG: LazyLock<&'static str> =
 static SAVE_STATES:    LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
-		.unwrap_or("save_states.toml"));
+		.unwrap_or("default_user_save_state.toml"));
 
 static CONF_FILE:      LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("CONF_FILE_PATH")
@@ -109,10 +111,14 @@ static mut PLUGS_COUNT: u8 = 0;
 static mut HMR_ON: bool = false;
 
 // if enabled then fill the MutState with the user_cc_map from their own toml file
-pub static mut USER_SS_ON: bool = false;
+
+pub static mut LOGUPDATE: bool = false;
+
 
 fn use_user_defined_cc_mappings () 
-	-> Result<HashMap<String, SaveState>, Box<dyn std::error::Error>>
+	-> Result<
+		(HashMap<String, SaveState>, Vec<u8>), 
+		Box<dyn std::error::Error> >
 {
 	let mut hm = HashMap::<String, SaveState>::new();
 	// read dir for all files
@@ -120,13 +126,15 @@ fn use_user_defined_cc_mappings ()
 	// and the values are the SaveState structs
 	
 	std::fs::read_dir(*crate::USER_SS_CONFIG)
+		// I'll get more than one path here if there's more
+		// so then more key values would be inserted to this hashmap
 		?.into_iter().for_each(|path| {
 			//parse the toml at the dir path	
 			let config: HashMap<String, SaveState> = 
 				toml::from_str(
 					&std::fs::read_to_string(path.unwrap().path()).unwrap()
 				).unwrap_or_else(|e| {
-					eprintln!("Error reading save_state file: {e}");
+					eprintln!("[MAIN]: Error reading save_state file: {e}");
 					std::process::exit(1);
 				});
 			
@@ -136,7 +144,14 @@ fn use_user_defined_cc_mappings ()
 			);
 		});
 
-	Ok(hm)
+	println!("[MAIN]: user ss config cc map {:#?}", hm);
+
+	let hmkeys = hm
+			.keys().into_iter()
+			.map(|k| k.parse::<u8>().unwrap())
+			.collect::<Vec<u8>>();
+
+	Ok((hm, hmkeys))
 }
 
 
@@ -146,7 +161,7 @@ fn check_args() {
 	if std::env::args().skip(1).any(|a| a == "list") {
 		let pm_ctx = PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
-		devices.iter().for_each(|d| println!("{} {:?} {:?}", d.id(), d.name(), d.direction()));
+		devices.iter().for_each(|d| println!("[MAIN]: devices {} {:?} {:?}", d.id(), d.name(), d.direction()));
 		std::process::exit(0);
 	}
 
@@ -154,13 +169,13 @@ fn check_args() {
 		unsafe { HMR_ON = true; };
 	}
 
-	if std::env::args().skip(1).any(|a| a == "pss") {
-		unsafe { USER_SS_ON = true; };
+
+	if std::env::args().skip(1).any(|a| a == "logupdate") {
+		unsafe { LOGUPDATE = true; };
 	}
 }
 
 fn use_default_user_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
-	println!("ss map {:#?}: ", ss_map);
 	if unsafe { !HMR_ON } {
 		return Some(SaveState {
 			cc:                ss_map["0"].cc,
@@ -188,15 +203,15 @@ fn check_libs() {
 			}
 		}
 
-		println!("plug count {}", unsafe { PLUGS_COUNT });
+		println!("[MAIN]: plug count {}", unsafe { PLUGS_COUNT });
 	} else {
-		println!("no target/libs dir existed...");
-		println!("recompiling...");
+		println!("[MAIN]: [info]: no target/libs dir existed...");
+		println!("[MAIN]: [info]: recompiling...");
 		let status = std::process::Command::new("./build_script/target/debug/build_script")
 			.output()
 			.unwrap();
-		println!("{}", std::str::from_utf8(&status.stdout).unwrap());
-		println!("{}", std::str::from_utf8(&status.stderr).unwrap());
+		println!("[MAIN]: [info]: {}", std::str::from_utf8(&status.stdout).unwrap());
+		println!("[MAIN]: [error]: {}", std::str::from_utf8(&status.stderr).unwrap());
 		assert!(status.status.success());
 	}
 
@@ -208,43 +223,55 @@ fn main() {
 	check_libs();
 
 	let init = |a: &App| {
+
+		// letting this fail because I don't want main necessarily to be wrapped in a result yet
+		// if this fails that means you don't have a controller plugged in
+
 		let ss_map: HashMap<String, SaveState> =
 			toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
-				eprintln!("Error reading save_states.toml file: {e}");
+				eprintln!("[MAIN]: Error reading save_states.toml file: {e}");
 				std::process::exit(1);
 			});
 
+		let pm_ctx = PortMidi::new().unwrap();
+		let midi = midi::Midi::new(&pm_ctx).unwrap();
+
+		let res = use_user_defined_cc_mappings();
+
+		let midi_ccs = utils::get_midi_ccs(&pm_ctx).unwrap();
+
 		let ms = Arc::new(Mutex::new(MutState {
+			is_listening_keys: false,
+			is_listening_midi: false,
 			plugins: {
 				let mut p = Vec::new();
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
 			},
-			is_listening:      false,
-			save_state: { // loading in the save state if we did not pass 'hmr' as a cli arg to cargo
+			// loading in the save state if we did not pass 'hmr' as a cli arg to cargo
+			save_state: { 
+				// hot reloading not that useful in this configuration
+				// more for using midi controller to switch to preset visual patches with their
+				// user_cc_config
 				if let Some(ss) = use_default_user_save_state(&ss_map) {
-					println!("using save state");
+					println!("[MAIN]: using defined default save state {:#?}", ss_map);
 					ss
-				} else { 
+				} else {
+						// hot reloading is only noticable in this configuration
 					let dss = SaveState {..Default::default()};
-					println!("not using save state"); 
+					println!("[MAIN]: not using defined save state... using default: {:#?}", dss); 
 					dss
 				}
 			},
-			// TODO: once I have this map, how should midi msg handler 
-			// know that the cc coming in is for changing the function?
-			//
-			// midi msg handler will need to know which cc's
-			// are being used in the current 'session' as loaded by the user
-			user_cc_map: {
-				if let Ok(cc_map) = use_user_defined_cc_mappings() {
-					cc_map
-				} else {
-					let dss = SaveState {..Default::default()};
-					let mut hm = HashMap::<String, SaveState>::new();
-					hm.insert("0".to_string(), dss);
-					hm
-				}
+			well_known_ccs: midi_ccs,
+			user_cc_map: if let Ok((ref hm, _)) = res { hm.clone() } else {
+				let dss = SaveState {..Default::default()};
+				let mut hm = HashMap::<String, SaveState>::new();
+				hm.insert("0".to_string(), dss);
+				hm
+			} ,
+			midi_config_fn_ccs: if let Ok((_, cckeys)) = res { cckeys } else {
+				vec![]
 			},
 			..Default::default()
 		}));
@@ -256,7 +283,7 @@ fn main() {
 			.default_input_device().unwrap()
 			.default_input_config().unwrap();
 
-		println!("default input {:#?}", input_config);
+		println!("[MAIN]: default input {:#?}", input_config);
 
 		let audio_processor = Arc::new(Mutex::new(audio_processor::AudioProcessor::new(
 				input_config.sample_rate().0 as usize,
@@ -299,21 +326,8 @@ fn main() {
 		});
 
 		let ms_ = ms.clone();
-
-		// watch plugin file changes if user passed hmr as a cli arg
-		if unsafe { HMR_ON } {
-			std::thread::spawn(move || {
-				watch(&*PLUGIN_PATH, &ms_);
-			});
-		}
-
-		let ms_ = ms.clone();
-
-		// TODO: put this midi setup in a func to clean up main() a bit?
-		if !std::env::args().skip(1).any(|a| a == "keys") {
-			let pm_ctx = PortMidi::new().unwrap();
-			let midi = midi::Midi::new(&pm_ctx).unwrap();
-
+		if !std::env::args().skip(1).any(|arg| arg == "keys") {
+			// can't easily move this block :(
 			std::thread::spawn(move || {
 				let mut in_port = pm_ctx.input_port(midi.dev.clone(), 256).unwrap();
 
@@ -340,17 +354,30 @@ fn main() {
 			});
 		}
 
+
+		let ms_ = ms.clone();
+		// watch plugin file changes if user passed hmr as a cli arg
+		if unsafe { HMR_ON } {
+			std::thread::spawn(move || {
+				watch(&*PLUGIN_PATH, &ms_);
+			});
+		}
+
 		a.new_window()
 			.view(view)
 			.key_pressed(key_pressed)
 			.key_released(key_released)
 			.build().unwrap();
 
-		State {
+		let state = State {
 			ms,
 			consumer: cons,
 			audio_processor,
-		}
+		};
+
+		println!("state.ms mutstate {:#?}", state.ms);
+
+		state
 	};
 
 	nannou::app(init)
@@ -384,7 +411,7 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 	match key {
 		Key::R => ms.is_reset         = false,
-		Key::P => { println!("is_saving_preset false");
+		Key::P => { println!("[MAIN][UTILS]: is_saving_preset false");
 			      ms.is_saving_preset = false;
 		},
 		_ => ()
@@ -395,22 +422,22 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 
 	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| {
-		println!("active func {:?}", ms.save_state.active_func);
+		println!("[MAIN]: active func {:?}", ms.save_state.active_func);
 		match ms.plugins.len().cmp(&(n.clone() as usize)) {
-			std::cmp::Ordering::Less => eprintln!("plugin {:?} not loaded", n),
+			std::cmp::Ordering::Less => eprintln!("[MAIN]: plugin {:?} not loaded", n),
 			_ => ms.save_state.active_func = n as usize,
 		}
 	};
 
 	match key {
-		Key::R => ms.is_reset   = true,
+		Key::R => ms.is_reset    = true,
 		Key::P => {
-			println!("is_saving_preset true");
-			ms.is_saving_preset = true;
+			println!("[Main]: is_saving_preset true");
+			ms.is_saving_preset  = true;
 		},
 		Key::L => {
-			println!("is_listening true");
-			ms.is_listening     = true;
+			println!("[MAIN][KEYS]: is_listening_keys true");
+			ms.is_listening_keys = true;
 		}
 
 		Key::Key1 => set_active_func(ms, ActiveFunc::Spiral),
@@ -422,8 +449,8 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 
 		Key::Up    if ms.save_state.current_intensity < 255.0 => ms.save_state.current_intensity += 1.0,
 		Key::Down  if ms.save_state.current_intensity > 0.0   => ms.save_state.current_intensity -= 1.0,
-		Key::Right if ms.save_state.time_dialation    < 255.0 => ms.save_state.time_dialation += 1.0,
-		Key::Left  if ms.save_state.time_dialation    > 0.0   => ms.save_state.time_dialation -= 1.0,
+		Key::Right if ms.save_state.time_dialation    < 255.0 => ms.save_state.time_dialation    += 1.0,
+		Key::Left  if ms.save_state.time_dialation    > 0.0   => ms.save_state.time_dialation    -= 1.0,
 
 		_ => (),
 	}
@@ -444,9 +471,15 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 		ap.add_samples(&buffer);
 	}
 
+	if ms.is_listening_midi {
+		utils::handle_save_preset_midi(&mut ms);
+	} else {
+		// no other thing listening for saving
+		// just keys here
+		utils::handle_save_preset_keys(&mut ms);
+	}
 
-	utils::handle_save_preset(&mut ms);
-	// println!("============");
+	// println!("[MAIN]: ============");
 	// f32::memprint_block(&ap.buffer);
 }
 
@@ -549,8 +582,7 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 
 				event_count += 1;
 
-				println!("lib removed: {:?}", lib_name);
-
+				println!("[MAIN]: lib removed: {:?}", lib_name);
 				// wait for files to be fully removed
 				// and recreated by the build script
 				// kind of a weird hack because an event is fired for each File
@@ -558,15 +590,15 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 				// to be replaced
 				if event_count == unsafe { PLUGS_COUNT * 4 } {
 
-					println!("event count {:?}", event_count);
+					println!("[MAIN]: event count {:?}", event_count);
 
 					let mut ms = ms_.lock().unwrap();
 
-					println!("\n=========\n watch event: {:?}", event.kind);
+					println!("[MAIN]: \n=========\n watch event: {:?}", event.kind);
 
 					event_count = 0;
 
-					println!("[INFO]: reloading plugins");
+					println!("[MAIN]: [INFO]: reloading plugins");
 					std::thread::sleep(
 						std::time::Duration::from_millis(
 							100));
@@ -575,7 +607,7 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 				}
 			}
 		},
-		Err(error) => println!("Error: {:?}", error),
+		Err(error) => println!("[MAIN]: Error: {:?}", error),
 	} }
 }
 
