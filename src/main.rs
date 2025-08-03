@@ -128,10 +128,10 @@ fn check_args() {
 		unsafe { HMR_ON = true; };
 	}
 
-
 	if std::env::args().skip(1).any(|a| a == "logupdate") {
 		unsafe { LOGUPDATE = true; };
 	}
+
 }
 
 fn check_libs() {
@@ -174,12 +174,30 @@ fn main() {
 				std::process::exit(1);
 			});
 
-		let pm_ctx = PortMidi::new().unwrap();
-		let midi = midi::Midi::new(&pm_ctx).unwrap();
+		let pm_ctx = PortMidi::new();
+		match pm_ctx {
+			Ok(ref _ctx) => {
+				println!("got midi ctx");
+			},
+			Err(e) => {
+				println!("could not get midi ctx {:?}", e);
+			} 
+		}
 
 		let res = utils::use_user_defined_cc_mappings();
 
-		let midi_ccs = utils::get_midi_ccs(&pm_ctx).unwrap();
+		let mut midi_ccs = vec![];
+		match pm_ctx {
+			Ok(ref ctx) => match utils::get_midi_ccs(&ctx) {
+				Ok(ccs) => midi_ccs = ccs,
+				Err(e) => {
+					println!("could not get ccs {:?}", e);	
+				}
+			},
+			Err(e) => {
+				println!("could not get ccs {:?}", e);
+			} 
+		}
 
 		let ms = Arc::new(Mutex::new(MutState {
 			is_listening_keys: false,
@@ -205,17 +223,51 @@ fn main() {
 				}
 			},
 			well_known_ccs: midi_ccs,
+			midi_config_fn_ccs: if let Ok((_, ref cckeys)) = res { cckeys.clone() } else {
+				vec![]
+			},
 			user_cc_map: if let Ok((ref hm, _)) = res { hm.clone() } else {
 				let dss = SaveState {..Default::default()};
 				let mut hm = HashMap::<String, SaveState>::new();
 				hm.insert("0".to_string(), dss);
 				hm
 			} ,
-			midi_config_fn_ccs: if let Ok((_, cckeys)) = res { cckeys } else {
-				vec![]
-			},
 			..Default::default()
 		}));
+
+		// can't easily move this block :(
+		// initialize midi stuff
+		if let Ok(ctx) = pm_ctx {
+			let ms_ = ms.clone();
+			std::thread::spawn(move || {
+				let midi = midi::Midi::new(&ctx).unwrap();
+				println!("got midi strukt {:?}", midi);
+				let mut in_port = ctx.input_port(midi.dev.clone(), 256).unwrap();
+
+				let mut backoff: u32 = 0;
+
+				loop {
+					// TODO: listen flag
+
+					let Ok(Some(m)) = in_port.read() else {
+						std::hint::spin_loop();
+
+						std::thread::sleep(
+							std::time::Duration::from_millis(
+								(backoff * 10) as u64));
+
+						backoff += 1;
+						backoff %= 10;
+						continue;
+					};
+
+					let mut ms = ms_.lock().unwrap();
+					midi.handle_msg(m, &mut ms);
+					backoff = 0;
+				}
+			});
+		} else { println!("[MAIN][INFO]: keyboard mode only running"); }
+
 
 		// setup audio input
 		let audio_host = nannou_audio::Host::new();
@@ -265,35 +317,6 @@ fn main() {
 			// in a loop?? i dont remember
 			// out_stream.play().unwrap();
 		});
-
-		// can't easily move this block :(
-		let ms_ = ms.clone();
-		if !std::env::args().skip(1).any(|arg| arg == "keys") {
-			std::thread::spawn(move || {
-				let mut in_port = pm_ctx.input_port(midi.dev.clone(), 256).unwrap();
-
-				let mut backoff = 0;
-				loop {
-					// TODO: listen flag
-
-					let Ok(Some(m)) = in_port.read() else {
-						std::hint::spin_loop();
-
-						std::thread::sleep(
-							std::time::Duration::from_millis(
-								(backoff * 10) as u64));
-
-						backoff += 1;
-						backoff %= 10;
-						continue;
-					};
-
-					let mut ms = ms_.lock().unwrap();
-					midi.handle_msg(m, &mut ms);
-					backoff = 0;
-				}
-			});
-		}
 
 
 		let ms_ = ms.clone();
