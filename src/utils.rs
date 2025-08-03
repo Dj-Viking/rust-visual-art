@@ -100,7 +100,9 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 }
 pub fn handle_save_preset_keys(ms: &mut MutexGuard<crate::MutState>) -> () {
 	if ms.is_saving_preset && ms.is_listening_keys {
-		let ss = crate::SaveState::new(ms);
+		let mut ss = crate::SaveState::new(ms);
+
+		ss.cc = 0;
 
 		// todo: if the cc was different than the current one then save a new file
 		// instead of saving over the existing one
@@ -110,7 +112,7 @@ pub fn handle_save_preset_keys(ms: &mut MutexGuard<crate::MutState>) -> () {
 
 		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
 
-		println!("[UTILS][KEYS]: what is cc here in save keys {:?}", ms.save_state.cc);
+		println!("[UTILS][KEYS]: what is cc here in save keys {:?}", "0");
 
 		// save to the default state file
 		// use this one for the is_listening_keys control
