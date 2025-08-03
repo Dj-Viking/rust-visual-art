@@ -152,9 +152,15 @@ impl Midi {
 				} else {
 					// cc was not a device config cc - it's a user defined cc for a visual patch
 					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {
+
+						// TODO: figure out how to override previously created configs
+						// check if cc map already contains a key that matches the incoming message channel
+
 						println!("[MIDI]: setting fn based on user cc mapping? {:?}", channel);
+
 						// recall the entire save_state to the cc mapped state value structure(s)
 						ms.save_state = ms.user_cc_map[&*format!("{}", channel)].clone()
+
 					} else {
 						// only if we're listening to create a new mapping
 						// and save a new patch to a cc mapping during the nannou update()
