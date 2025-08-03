@@ -114,8 +114,6 @@ pub static mut HMR_ON: bool = false;
 
 pub static mut LOGUPDATE: bool = false;
 
-pub static mut KEYS_ONLY: bool = false;
-
 fn check_args() {
 
 	// list midi devices in terminal
@@ -134,9 +132,6 @@ fn check_args() {
 		unsafe { LOGUPDATE = true; };
 	}
 
-	if std::env::args().skip(1).any(|a| a == "keys") {
-		unsafe { KEYS_ONLY = true; };
-	}
 }
 
 fn check_libs() {
@@ -181,7 +176,7 @@ fn main() {
 
 		let pm_ctx = PortMidi::new();
 		match pm_ctx {
-			Ok(ctx) => {
+			Ok(ref _ctx) => {
 				println!("got midi ctx");
 			},
 			Err(e) => {
@@ -244,35 +239,33 @@ fn main() {
 		// initialize midi stuff
 		if let Ok(ctx) = pm_ctx {
 			let ms_ = ms.clone();
-			if !std::env::args().skip(1).any(|arg| arg == "keys") {
-				std::thread::spawn(move || {
-					let midi = midi::Midi::new(&ctx).unwrap();
-					println!("got midi strukt {:?}", midi);
-					let mut in_port = ctx.input_port(midi.dev.clone(), 256).unwrap();
+			std::thread::spawn(move || {
+				let midi = midi::Midi::new(&ctx).unwrap();
+				println!("got midi strukt {:?}", midi);
+				let mut in_port = ctx.input_port(midi.dev.clone(), 256).unwrap();
 
-					let mut backoff: u32 = 0;
+				let mut backoff: u32 = 0;
 
-					loop {
-						// TODO: listen flag
+				loop {
+					// TODO: listen flag
 
-						let Ok(Some(m)) = in_port.read() else {
-							std::hint::spin_loop();
+					let Ok(Some(m)) = in_port.read() else {
+						std::hint::spin_loop();
 
-							std::thread::sleep(
-								std::time::Duration::from_millis(
-									(backoff * 10) as u64));
+						std::thread::sleep(
+							std::time::Duration::from_millis(
+								(backoff * 10) as u64));
 
-							backoff += 1;
-							backoff %= 10;
-							continue;
-						};
+						backoff += 1;
+						backoff %= 10;
+						continue;
+					};
 
-						let mut ms = ms_.lock().unwrap();
-						midi.handle_msg(m, &mut ms);
-						backoff = 0;
-					}
-				});
-			}
+					let mut ms = ms_.lock().unwrap();
+					midi.handle_msg(m, &mut ms);
+					backoff = 0;
+				}
+			});
 		} else { println!("[MAIN][INFO]: keyboard mode only running"); }
 
 
