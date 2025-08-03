@@ -60,7 +60,7 @@ impl Midi {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
-		let lerp_with_range = |range| crate::lerp_float(intensity, 0.0, range, 0, 127);
+		let lerp_with_range = |range| crate::utils::lerp_float(intensity, 0.0, range, 0, 127);
 
 		match channel {
 

@@ -98,6 +98,72 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 	}
 
 }
+// output a number within a specific range from an entirely
+pub fn lerp_float(
+    input:  u8,  // - input value to determine what position in the range the number sits
+    minout: f32, // - minimum percentage value
+    maxout: f32, // - maximum percentage value
+    minin:  u8,  // - minimum input value the range can be
+    maxin:  u8,  // - maximum input value the range can be
+) -> f32 {
+	(maxout - minout) * ((input - minin) as f32)
+	   / ((maxin - minin) as f32) + minout
+}
+pub fn use_default_user_save_state(ss_map: &HashMap<String, crate::SaveState>) -> Option<crate::SaveState> {
+	if unsafe { !crate::HMR_ON } {
+		return Some(crate::SaveState {
+			cc:                ss_map["0"].cc,
+			active_func:       ss_map["0"].active_func,
+			is_fft:            ss_map["0"].is_fft,
+			current_intensity: ss_map["0"].current_intensity,
+			time_dialation:    ss_map["0"].time_dialation,
+			decay_factor:      ss_map["0"].decay_factor,
+			lum_mod:           ss_map["0"].lum_mod,
+			modulo_param:      ss_map["0"].modulo_param,
+			decay_param:       ss_map["0"].decay_param,
+		});
+	}
+
+	None
+}
+pub fn use_user_defined_cc_mappings () 
+	-> Result<
+		(HashMap<String, crate::SaveState>, Vec<u8>), 
+		Box<dyn std::error::Error>>
+{
+	let mut hm = HashMap::<String, crate::SaveState>::new();
+	// read dir for all files
+	// parse all files into a hashmap with hashkeys are the cc number for the mapping
+	// and the values are the SaveState structs
+	
+	std::fs::read_dir(*crate::USER_SS_CONFIG)
+		// I'll get more than one path here if there's more
+		// so then more key values would be inserted to this hashmap
+		?.into_iter().for_each(|path| {
+			//parse the toml at the dir path	
+			let config: HashMap<String, crate::SaveState> = 
+				toml::from_str(
+					&std::fs::read_to_string(path.unwrap().path()).unwrap()
+				).unwrap_or_else(|e| {
+					eprintln!("[MAIN]: Error reading save_state file: {e}");
+					std::process::exit(1);
+				});
+			
+			hm.insert(
+				config.keys().last().unwrap().to_string(),
+				config.values().last().unwrap().clone()
+			);
+		});
+
+	println!("[MAIN]: user ss config cc map {:#?}", hm);
+
+	let hmkeys = hm
+			.keys().into_iter()
+			.map(|k| k.parse::<u8>().unwrap())
+			.collect::<Vec<u8>>();
+
+	Ok((hm, hmkeys))
+}
 pub fn handle_save_preset_keys(ms: &mut MutexGuard<crate::MutState>) -> () {
 	if ms.is_saving_preset && ms.is_listening_keys {
 		let mut ss = crate::SaveState::new(ms);

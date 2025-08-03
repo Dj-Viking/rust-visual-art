@@ -108,52 +108,11 @@ static PLUGIN_PATH:    LazyLock<&'static str> =
 const SAMPLES: usize = 4096;
 static mut PLUGS_COUNT: u8 = 0;
 
-static mut HMR_ON: bool = false;
+pub static mut HMR_ON: bool = false;
 
 // if enabled then fill the MutState with the user_cc_map from their own toml file
 
 pub static mut LOGUPDATE: bool = false;
-
-
-fn use_user_defined_cc_mappings () 
-	-> Result<
-		(HashMap<String, SaveState>, Vec<u8>), 
-		Box<dyn std::error::Error> >
-{
-	let mut hm = HashMap::<String, SaveState>::new();
-	// read dir for all files
-	// parse all files into a hashmap with hashkeys are the cc number for the mapping
-	// and the values are the SaveState structs
-	
-	std::fs::read_dir(*crate::USER_SS_CONFIG)
-		// I'll get more than one path here if there's more
-		// so then more key values would be inserted to this hashmap
-		?.into_iter().for_each(|path| {
-			//parse the toml at the dir path	
-			let config: HashMap<String, SaveState> = 
-				toml::from_str(
-					&std::fs::read_to_string(path.unwrap().path()).unwrap()
-				).unwrap_or_else(|e| {
-					eprintln!("[MAIN]: Error reading save_state file: {e}");
-					std::process::exit(1);
-				});
-			
-			hm.insert(
-				config.keys().last().unwrap().to_string(),
-				config.values().last().unwrap().clone()
-			);
-		});
-
-	println!("[MAIN]: user ss config cc map {:#?}", hm);
-
-	let hmkeys = hm
-			.keys().into_iter()
-			.map(|k| k.parse::<u8>().unwrap())
-			.collect::<Vec<u8>>();
-
-	Ok((hm, hmkeys))
-}
-
 
 fn check_args() {
 
@@ -173,24 +132,6 @@ fn check_args() {
 	if std::env::args().skip(1).any(|a| a == "logupdate") {
 		unsafe { LOGUPDATE = true; };
 	}
-}
-
-fn use_default_user_save_state(ss_map: &HashMap<String, SaveState>) -> Option<SaveState> {
-	if unsafe { !HMR_ON } {
-		return Some(SaveState {
-			cc:                ss_map["0"].cc,
-			active_func:       ss_map["0"].active_func,
-			is_fft:            ss_map["0"].is_fft,
-			current_intensity: ss_map["0"].current_intensity,
-			time_dialation:    ss_map["0"].time_dialation,
-			decay_factor:      ss_map["0"].decay_factor,
-			lum_mod:           ss_map["0"].lum_mod,
-			modulo_param:      ss_map["0"].modulo_param,
-			decay_param:       ss_map["0"].decay_param,
-		});
-	}
-
-	None
 }
 
 fn check_libs() {
@@ -236,7 +177,7 @@ fn main() {
 		let pm_ctx = PortMidi::new().unwrap();
 		let midi = midi::Midi::new(&pm_ctx).unwrap();
 
-		let res = use_user_defined_cc_mappings();
+		let res = utils::use_user_defined_cc_mappings();
 
 		let midi_ccs = utils::get_midi_ccs(&pm_ctx).unwrap();
 
@@ -253,7 +194,7 @@ fn main() {
 				// hot reloading not that useful in this configuration
 				// more for using midi controller to switch to preset visual patches with their
 				// user_cc_config
-				if let Some(ss) = use_default_user_save_state(&ss_map) {
+				if let Some(ss) = utils::use_default_user_save_state(&ss_map) {
 					println!("[MAIN]: using defined default save state {:#?}", ss_map);
 					ss
 				} else {
@@ -325,9 +266,9 @@ fn main() {
 			// out_stream.play().unwrap();
 		});
 
+		// can't easily move this block :(
 		let ms_ = ms.clone();
 		if !std::env::args().skip(1).any(|arg| arg == "keys") {
-			// can't easily move this block :(
 			std::thread::spawn(move || {
 				let mut in_port = pm_ctx.input_port(midi.dev.clone(), 256).unwrap();
 
@@ -546,7 +487,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 
 		let lum = if ms.save_state.is_fft {
-			lerp_float((mags[i as usize] + ms.save_state.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
+			utils::lerp_float((mags[i as usize] + ms.save_state.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
 
 		draw.rect().xy(r.xy()).wh(r.wh())
@@ -611,14 +552,3 @@ fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
 	} }
 }
 
-// output a number within a specific range from an entirely
-pub fn lerp_float(
-    input:  u8,  // - input value to determine what position in the range the number sits
-    minout: f32, // - minimum percentage value
-    maxout: f32, // - maximum percentage value
-    minin:  u8,  // - minimum input value the range can be
-    maxin:  u8,  // - maximum input value the range can be
-) -> f32 {
-	(maxout - minout) * ((input - minin) as f32)
-	   / ((maxin - minin) as f32) + minout
-}
