@@ -122,12 +122,14 @@ impl Midi {
 					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {
 						println!("[MIDI]: setting fn based on user cc mapping? {:?}", channel);
 						// recall the entire save_state to the cc mapped state value structure(s)
+						// also prevent accidentally trying to index into 
+						// the cc map with a midi cc value that isn't saved yet
+						// we were listening so let's override it - user is probably saving
+						// new patch with the same cc value
 						ms.save_state = ms.user_cc_map[&*format!("{}", channel)].clone()
 					} else {
-						// only if we're not listening as to not override it
-						// or accidentally try to index into the cc map with a midi cc value that isn't saved yet
-						// we were listening so let's override it - user is probably saving any
-						// new patch with the same cc value
+						// only if we're listening to create a new mapping
+						// and save a new patch to a cc mapping during the nannou update()
 						println!("[MIDI]: set save_state.cc to {:?}", channel);
 						ms.save_state.cc = channel;
 					}
