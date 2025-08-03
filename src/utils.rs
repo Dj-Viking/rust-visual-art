@@ -26,21 +26,25 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 	let dev = devices.into_iter()
 		.find(|d| 
 			d.direction() == portmidi::Direction::Input 
-			&& config.keys().any(|n| n == d.name()))
-		.unwrap_or_else(|| {
-			eprintln!("[MIDI]: No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
-			std::process::exit(1);
-		});
+			&& config.keys().any(|n| n == d.name()));
+		
 
-	let mut midi_ccs = config[dev.name()].fns.clone().to_vec();
+	match dev {
+		Some(d) => {
+			let mut midi_ccs = config[d.name()].fns.clone().to_vec();
 
-	for key in config[dev.name()].keys() {
-		if let Some(value) = config[dev.name()].get(key) {
-			midi_ccs.push(value as u8);
-		}
+			for key in config[d.name()].keys() {
+				if let Some(value) = config[d.name()].get(key) {
+					midi_ccs.push(value as u8);
+				}
+			}
+
+			Ok(midi_ccs)
+		},
+		None => {
+			Err("blah".into())
+		},
 	}
-
-	Ok(midi_ccs)
 }
 
 pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {

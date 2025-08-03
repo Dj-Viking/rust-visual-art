@@ -1,5 +1,6 @@
 # configure your midi controller here.
 # though knowing what your OS will name your hardware controller varies system to system
+# in my case linux names the xone:k2 with a trailing space lol *shrugs*
 ["XONE:K2 "]
 # these are ordered by the sorted file names of the plugin functions 
 # the file prefixed by 1_ is the first item in this function
@@ -12,6 +13,31 @@ fns = [
 	    # ??       Something
 ]
 name              = "XONE:K2 "
+intensity         = 16 # fader_1
+decay_factor      = 17 # fader_2
+lum_mod           = 18 # fader_3
+time_dialation    = 19 # fader_4
+reset             = 36 # A Button
+backwards         = 37 # B Button
+is_fft            = 38 # C Button
+is_listening_midi = 52 # 1_encoder_push
+is_saving_preset  = 53 # 2_encoder_push
+decay_param       = 10 # 3_middle_knob
+modulo_param      = 14 # 3_bottom_knob
+
+# this is what my mac assigns the name without space...while linux has trailing spaces *shrugs*
+["XONE:K2"]
+# these are ordered by the sorted file names of the plugin functions 
+# the file prefixed by 1_ is the first item in this function
+fns = [
+	24, # M Button Spiral
+	25, # N Button V2
+	26, # O Button Waves
+	27, # P Button Audio
+	31  # L Button Solid
+	    # ??       Something
+]
+name              = "XONE:K2"
 intensity         = 16 # fader_1
 decay_factor      = 17 # fader_2
 lum_mod           = 18 # fader_3

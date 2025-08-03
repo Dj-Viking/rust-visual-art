@@ -7,7 +7,7 @@ use crate::MutState;
 
 use serde_json::Value;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct DeviceConfig {
 	pub backwards:         u8,
 	pub intensity:         u8,
@@ -50,7 +50,7 @@ impl DeviceConfig {
 		keys
 	}
 }
-
+#[derive(Debug)]
 pub struct Midi {
 	pub dev: DeviceInfo,
 	cfg: DeviceConfig,
@@ -69,18 +69,22 @@ impl Midi {
 		println!("loaded midi config.toml {:#?}", config);
 
 		let dev = devices.into_iter()
-			.find(|d| 
+			.find(|d| {
+				println!("device {:?}", d);
 				d.direction() == portmidi::Direction::Input 
-				&& config.keys().any(|n| n == d.name()))
-			.unwrap_or_else(|| {
-				eprintln!("[MIDI]: No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
-				std::process::exit(1);
+				&& config.keys().any(|n| n == d.name())
 			});
+			
+		match dev {
+			Some(d) => { Ok(Self {
+				cfg: unsafe { config.remove(d.name()).unwrap_unchecked() },
+				dev: d
+			}) },
+			None => {
+				Err("blah".into())
+			},
+		}
 
-		Ok(Self {
-			cfg: unsafe { config.remove(dev.name()).unwrap_unchecked() },
-			dev
-		})
 	}
 
 	// TODO: setup a debugger?? :o
