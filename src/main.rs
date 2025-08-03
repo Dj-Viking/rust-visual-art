@@ -181,7 +181,7 @@ fn main() {
 
 		let pm_ctx = PortMidi::new();
 		match pm_ctx {
-			Ok(ref ctx) => {
+			Ok(ctx) => {
 				println!("got midi ctx");
 			},
 			Err(e) => {
