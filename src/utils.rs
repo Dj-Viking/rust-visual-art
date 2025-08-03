@@ -53,8 +53,6 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 	if ms.is_saving_preset && ms.is_listening_midi {
 		let ss = crate::SaveState::new(ms);
 
-		// todo: if the cc was different than the current one then save a new file
-		// instead of saving over the existing one
 		let mut tomlstring: String = String::from(format!("[{}]", { 
 			ms.save_state.cc 
 		}));
@@ -170,8 +168,6 @@ pub fn handle_save_preset_keys(ms: &mut MutexGuard<crate::MutState>) -> () {
 
 		ss.cc = 0;
 
-		// todo: if the cc was different than the current one then save a new file
-		// instead of saving over the existing one
 		let mut tomlstring: String = String::from(format!("[{}]", { "0" }));
 
 		let toml = toml::to_string(&ss).unwrap();
