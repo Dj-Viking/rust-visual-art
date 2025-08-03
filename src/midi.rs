@@ -5,10 +5,11 @@ use std::sync::{MutexGuard};
 
 use crate::MutState;
 
+use serde_json::Value;
+
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct DeviceConfig {
 	pub backwards:         u8,
-	pub fns:               Box<[u8]>,
 	pub intensity:         u8,
 	pub time_dialation:    u8,
 	pub decay_factor:      u8,
@@ -19,6 +20,35 @@ pub struct DeviceConfig {
 	pub decay_param:       u8,
 	pub is_listening_midi: u8,
 	pub is_saving_preset:  u8,
+	pub fns:               Box<[u8]>,
+	pub name:              String,
+}
+impl DeviceConfig {
+	pub fn get(&self, key: String) -> Option<u64> {
+		let json = serde_json::to_value(self).unwrap();
+
+		// Value enum variants of Number don't have as_u8 method
+		// so i'll just downcast it later i guess
+		if let Value::Object(map) = json {
+			if key != "name".to_string() || key != "fns".to_string() {
+				return map.get(&key).unwrap().as_u64();
+			}
+		}
+
+		None
+	}
+	pub fn keys(&self) -> Vec<String> {
+		let json = serde_json::to_value(self).unwrap();
+		let mut keys = vec![];
+
+		if let Value::Object(map) = json {
+			for (key, _) in map {
+				keys.push(key);
+			}
+		}
+
+		keys
+	}
 }
 
 pub struct Midi {
@@ -46,8 +76,6 @@ impl Midi {
 				eprintln!("[MIDI]: No device defined in config found - \ndid you plug in a MIDI controller yet?\nOr have you configured your controller for the config.toml file yet?");
 				std::process::exit(1);
 			});
-
-
 
 		Ok(Self {
 			cfg: unsafe { config.remove(dev.name()).unwrap_unchecked() },

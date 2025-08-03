@@ -34,17 +34,11 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 
 	let mut midi_ccs = config[dev.name()].fns.clone().to_vec();
 
-	midi_ccs.push(config[dev.name()].intensity);
-	midi_ccs.push(config[dev.name()].decay_factor);
-	midi_ccs.push(config[dev.name()].lum_mod);
-	midi_ccs.push(config[dev.name()].time_dialation);
-	midi_ccs.push(config[dev.name()].reset);
-	midi_ccs.push(config[dev.name()].backwards);
-	midi_ccs.push(config[dev.name()].is_fft);
-	midi_ccs.push(config[dev.name()].is_listening_midi);
-	midi_ccs.push(config[dev.name()].is_saving_preset);
-	midi_ccs.push(config[dev.name()].decay_param);
-	midi_ccs.push(config[dev.name()].modulo_param);
+	for key in config[dev.name()].keys() {
+		if let Some(value) = config[dev.name()].get(key) {
+			midi_ccs.push(value as u8);
+		}
+	}
 
 	Ok(midi_ccs)
 }

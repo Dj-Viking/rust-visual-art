@@ -11,6 +11,7 @@ fns = [
 	31  # L Button Solid
 	    # ??       Something
 ]
+name              = "XONE:K2 "
 intensity         = 16 # fader_1
 decay_factor      = 17 # fader_2
 lum_mod           = 18 # fader_3
@@ -29,6 +30,7 @@ fns = [
 	41,
 	26
 ]
+name              = "Arturia KeyLab Essential 61 MID"
 intensity         = 73
 decay_factor      = 0
 lum_mod           = 0
