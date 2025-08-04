@@ -59,6 +59,7 @@ pub struct Midi {
 impl Midi {
 	pub fn new(pm_ctx: &portmidi::PortMidi) -> Result<Self, Box<dyn std::error::Error>> {
 		let devices = pm_ctx.devices()?;
+		println!("[MIDI]: devices {:?}", devices);
 		let mut config: HashMap<String, DeviceConfig> = 
 			toml::from_str(&std::fs::read_to_string(*crate::CONF_FILE).unwrap()).unwrap_or_else(|e| {
 				eprintln!("[MIDI]: Error reading config file: {e}");
@@ -76,10 +77,12 @@ impl Midi {
 			});
 			
 		match dev {
-			Some(d) => { Ok(Self {
-				cfg: unsafe { config.remove(d.name()).unwrap_unchecked() },
-				dev: d
-			}) },
+			Some(d) => { 
+				Ok(Self {
+					cfg: unsafe { config.remove(d.name()).unwrap_unchecked() },
+					dev: d
+				}) 
+			},
 			None => {
 				Err("blah".into())
 			},

@@ -120,7 +120,7 @@ fn check_args() {
 	if std::env::args().skip(1).any(|a| a == "list") {
 		let pm_ctx = PortMidi::new().unwrap();
 		let devices = pm_ctx.devices().unwrap();
-		devices.iter().for_each(|d| println!("[MAIN]: devices {} {:?} {:?}", d.id(), d.name(), d.direction()));
+		devices.iter().for_each(|d| println!("[MAIN]: device {} {:?} {:?}", d.id(), d.name(), d.direction()));
 		std::process::exit(0);
 	}
 
@@ -240,34 +240,27 @@ fn main() {
 		if let Ok(ctx) = pm_ctx {
 			let ms_ = ms.clone();
 			std::thread::spawn(move || {
-				let midi = midi::Midi::new(&ctx).unwrap();
-				println!("got midi strukt {:?}", midi);
-				let mut in_port = ctx.input_port(midi.dev.clone(), 256).unwrap();
+				let midi_result = midi::Midi::new(&ctx);
+				if let Ok(midi) = midi_result {
+					let mut in_port = ctx.input_port(midi.dev.clone(), 256).unwrap();
+					let mut backoff: u32 = 0;
+					loop {
+						let Ok(Some(m)) = in_port.read() else {
+							std::hint::spin_loop();
+							std::thread::sleep(std::time::Duration::from_millis(
+									(backoff * 10) as u64));
+							backoff += 1;
+							backoff %= 10;
+							continue;
+						};
 
-				let mut backoff: u32 = 0;
-
-				loop {
-					// TODO: listen flag
-
-					let Ok(Some(m)) = in_port.read() else {
-						std::hint::spin_loop();
-
-						std::thread::sleep(
-							std::time::Duration::from_millis(
-								(backoff * 10) as u64));
-
-						backoff += 1;
-						backoff %= 10;
-						continue;
-					};
-
-					let mut ms = ms_.lock().unwrap();
-					midi.handle_msg(m, &mut ms);
-					backoff = 0;
-				}
+						let mut ms = ms_.lock().unwrap();
+						midi.handle_msg(m, &mut ms);
+						backoff = 0;
+					}
+				} else { println!("[MAIN][INFO]: keyboard mode only running"); }
 			});
-		} else { println!("[MAIN][INFO]: keyboard mode only running"); }
-
+		} 
 
 		// setup audio input
 		let audio_host = nannou_audio::Host::new();
