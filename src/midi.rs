@@ -7,7 +7,7 @@ use crate::MutState;
 
 use serde_json::Value;
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct DeviceConfig {
 	pub backwards:         u8,
 	pub intensity:         u8,
@@ -24,14 +24,14 @@ pub struct DeviceConfig {
 	pub name:              String,
 }
 impl DeviceConfig {
-	pub fn get(&self, key: String) -> Option<u64> {
+	pub fn get(&self, key: String) -> Option<u8> {
 		let json = serde_json::to_value(self).unwrap();
 
-		// Value enum variants of Number don't have as_u8 method
-		// so i'll just downcast it later i guess
 		if let Value::Object(map) = json {
-			if key != "name".to_string() || key != "fns".to_string() {
-				return map.get(&key).unwrap().as_u64();
+			if key != "name".to_string() 
+			   || key != "fns".to_string() 
+			{
+				return Some(map.get(&key).unwrap().as_u64().unwrap() as u8);
 			}
 		}
 
@@ -53,7 +53,7 @@ impl DeviceConfig {
 #[derive(Debug)]
 pub struct Midi {
 	pub dev: DeviceInfo,
-	cfg: DeviceConfig,
+	pub cfg: DeviceConfig,
 }
 
 impl Midi {
@@ -84,14 +84,42 @@ impl Midi {
 				}) 
 			},
 			None => {
-				Err("blah".into())
+				Err("couldn't init midi struct".into())
 			},
 		}
 
 	}
 
 	// TODO: setup a debugger?? :o
-	pub fn handle_msg(&self, me: MidiEvent, ms: &mut MutState) {
+	pub fn handle_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+		let channel   = me.message.data1;
+		let intensity = me.message.data2;
+
+		match self.cfg.name.as_str() {
+			"XONE:K2 " | "XONE:K2" => self.handle_xonek2_msg(me, ms),
+			"WINE ALSA Output #1"  => self.handle_ableton_msg(me, ms),
+			"Pioneer DJ XDJ-RX2"   => self.handle_rx2_msg(me, ms),
+			_ => {
+				println!("[MIDI][INFO]: unknown controller name - not yet configured");
+			},
+		}
+
+	}
+
+	// private:
+	fn handle_ableton_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+		let channel   = me.message.data1;
+		let intensity = me.message.data2;
+		panic!("todo");
+	}
+
+	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+		let channel   = me.message.data1;
+		let intensity = me.message.data2;
+		panic!("todo");
+	}
+
+	fn handle_xonek2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
@@ -178,10 +206,10 @@ impl Midi {
 				println!("[MIDI][UNASSIGNED?]: catch-all-match-arm got bogus amogus channel? {:?}", channel);
 			},
 		}
-
 		// momentary switch
 		ms.is_reset         = channel == self.cfg.reset            && intensity > 0;
 		ms.is_saving_preset = channel == self.cfg.is_saving_preset && intensity > 0;
-
 	}
+
+
 }

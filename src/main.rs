@@ -53,6 +53,7 @@ struct MutState {
 	plugins:            Vec<loading::Plugin>,
 	save_state:         SaveState,
 	user_cc_map:        HashMap<String, SaveState>,
+	controller_name:    String,
 	midi_config_fn_ccs: Vec<u8>, // assigned by the user
 	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
 }
@@ -183,10 +184,15 @@ fn main() {
 				println!("could not get midi ctx {:?}", e);
 			} 
 		}
+		
 
 		let res = utils::use_user_defined_cc_mappings();
 
 		let mut midi_ccs = vec![];
+		let midi_result = match pm_ctx {
+			Ok(ref ctx) => { midi::Midi::new(&ctx) },
+			Err(e)      => { Err(format!("could not get midi result {:?}", e).into()) }
+		};
 		match pm_ctx {
 			Ok(ref ctx) => match utils::get_midi_ccs(&ctx) {
 				Ok(ccs) => midi_ccs = ccs,
@@ -221,6 +227,13 @@ fn main() {
 					println!("[MAIN]: not using defined save state... using default: {:#?}", dss); 
 					dss
 				}
+			},
+			controller_name: if let Ok(midi) =  midi_result {
+				midi.cfg.name
+			} else {
+				let mut s = String::new();
+				s.push_str("default");
+				s
 			},
 			well_known_ccs: midi_ccs,
 			midi_config_fn_ccs: if let Ok((_, ref cckeys)) = res { cckeys.clone() } else {

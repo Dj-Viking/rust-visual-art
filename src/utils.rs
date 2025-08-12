@@ -27,7 +27,6 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 		.find(|d| 
 			d.direction() == portmidi::Direction::Input 
 			&& config.keys().any(|n| n == d.name()));
-		
 
 	match dev {
 		Some(d) => {
@@ -35,14 +34,14 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 
 			for key in config[d.name()].keys() {
 				if let Some(value) = config[d.name()].get(key) {
-					midi_ccs.push(value as u8);
+					midi_ccs.push(value);
 				}
 			}
 
 			Ok(midi_ccs)
 		},
 		None => {
-			Err("blah".into())
+			Err("could not find device".into())
 		},
 	}
 }
@@ -68,6 +67,8 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 		println!("[UTILS][MIDI]: what is cc here in save midi {}", ms.save_state.cc);
 
 		// if we're not saving default it's for midi cc map
+		// TODO: make new folder for each controller being used
+		// ex user_ss_config/<controller_name>/<cc>_save_state.toml
 		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
 		{
 			// make user ss folder if not exist

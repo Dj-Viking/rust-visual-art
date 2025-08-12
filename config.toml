@@ -49,6 +49,33 @@ is_saving_preset  = 53 # 2_encoder_push
 decay_param       = 10 # 3_middle_knob
 modulo_param      = 14 # 3_bottom_knob
 
+# this is the output sent from ableton live
+# interestingly all the intensity values are 64
+# despite setting the intensity in ableton to 127
+["WINE ALSA Output #1"]
+# these are ordered by the sorted file names of the plugin functions 
+# the file prefixed by 1_ is the first item in this function
+fns = [
+	24, # M Button Spiral
+	25, # N Button V2
+	26, # O Button Waves
+	27, # P Button Audio
+	31  # L Button Solid
+	    # ??       Something
+]
+name              = "WINE ALSA Output #1"
+intensity         = 33 # right jog wheel nudge 
+decay_factor      = 0  # fader_2
+lum_mod           = 0  # fader_3
+time_dialation    = 0  # fader_4
+reset             = 0  # A Button
+backwards         = 0  # B Button
+is_fft            = 0  # C Button
+is_listening_midi = 0  # 1_encoder_push
+is_saving_preset  = 0  # 2_encoder_push
+decay_param       = 0  # 3_middle_knob
+modulo_param      = 0  # 3_bottom_knob
+
 ["Pioneer DJ XDJ-RX2"]
 # these are ordered by the sorted file names of the plugin functions 
 # the file prefixed by 1_ is the first item in this function
