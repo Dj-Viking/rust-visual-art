@@ -7,7 +7,7 @@ use crate::MutState;
 
 use serde_json::Value;
 
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct DeviceConfig {
 	pub backwards:         u8,
 	pub intensity:         u8,
