@@ -191,7 +191,7 @@ fn main() {
 		let mut midi_ccs = vec![];
 		let midi_result = match pm_ctx {
 			Ok(ref ctx) => { midi::Midi::new(&ctx) },
-			Err(e)      => { Err(format!("could not get midi result {:?}", e).into()) }
+			Err(e)      => { Err(format!("could not use pm ctx to create our midi helper structure {:?}", e).into()) }
 		};
 		match pm_ctx {
 			Ok(ref ctx) => match utils::get_midi_ccs(&ctx) {
