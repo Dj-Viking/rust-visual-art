@@ -196,7 +196,7 @@ fn main() {
 		match pm_ctx {
 			Ok(ref ctx) => match utils::get_midi_ccs(&ctx) {
 				Ok(ccs) => midi_ccs = ccs,
-				Err(e) => {
+				Err(e)  => {
 					println!("could not get ccs {:?}", e);	
 				}
 			},
