@@ -64,17 +64,17 @@ fns = [
 	    # ??       Something
 ]
 name              = "WINE ALSA Output #1"
-intensity         = 33 # right jog wheel nudge 
-decay_factor      = 0  # fader_2
-lum_mod           = 0  # fader_3
-time_dialation    = 0  # fader_4
-reset             = 0  # A Button
-backwards         = 0  # B Button
-is_fft            = 0  # C Button
-is_listening_midi = 0  # 1_encoder_push
-is_saving_preset  = 0  # 2_encoder_push
-decay_param       = 0  # 3_middle_knob
-modulo_param      = 0  # 3_bottom_knob
+intensity         = 0 # ??
+decay_factor      = 0 # ??
+lum_mod           = 0 # ??
+time_dialation    = 0 # ??
+reset             = 0 # ??
+backwards         = 0 # ??
+is_fft            = 0 # ??
+is_listening_midi = 0 # ??
+is_saving_preset  = 0 # ??
+decay_param       = 0 # ??
+modulo_param      = 0 # ??
 
 ["Pioneer DJ XDJ-RX2"]
 # these are ordered by the sorted file names of the plugin functions 
