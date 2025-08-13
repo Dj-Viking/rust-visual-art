@@ -111,10 +111,12 @@ impl Midi {
 	// private:
 	fn handle_ableton_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
 		let channel   = me.message.data1;
+
+		// intensity value which I think is 64 for note-off message
 		let intensity = me.message.data2;
 
 		match channel {
-			_ if intensity >= 64 
+			_ if intensity >= 65 
 			  || intensity == 127 
 			  && ms.well_known_ccs.iter().any(|cc| *cc == channel) => 
 			{ 
@@ -127,9 +129,10 @@ impl Midi {
 			_ => {} 
 		}
 
-		// momentary switch
+		// the only way this can seem 'momentary' with using ableton is if i send
+		// two note on messages in series with intensities like 127,1 and ignore the note-off
 		println!("[MIDI][WINE]: event {:?} | intensity: {}", channel, intensity);
-		ms.is_reset = channel == self.cfg.reset && intensity > 64;
+		ms.is_reset = channel == self.cfg.reset && intensity > 65;
 	}
 
 	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
