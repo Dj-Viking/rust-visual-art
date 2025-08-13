@@ -27,15 +27,17 @@ impl DeviceConfig {
 	pub fn get(&self, key: String) -> Option<u8> {
 		let json = serde_json::to_value(self).unwrap();
 
-		if let Value::Object(map) = json {
-			if key != "name".to_string() 
-			   || key != "fns".to_string() 
-			{
-				return Some(map.get(&key).unwrap().as_u64().unwrap() as u8);
-			}
+		if key.as_str() == "name"
+		|| key.as_str() == "fns"
+		{
+			return None;
 		}
 
-		None
+		if let Value::Object(map) = json {
+			return Some(map.get(&key).unwrap().as_u64().unwrap() as u8);
+		} else {
+			None
+		}
 	}
 	pub fn keys(&self) -> Vec<String> {
 		let json = serde_json::to_value(self).unwrap();
@@ -110,7 +112,24 @@ impl Midi {
 	fn handle_ableton_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
-		panic!("todo");
+
+		match channel {
+			_ if intensity >= 64 
+			  || intensity == 127 
+			  && ms.well_known_ccs.iter().any(|cc| *cc == channel) => 
+			{ 
+				println!("[MIDI][WINE]: fn midi\n            channel: {:?} | intensity: {}", channel, intensity);
+				match self.cfg.fns.iter().position(|f| *f == channel) {
+					Some(i) => { ms.save_state.active_func = i; },
+					None => (), 
+				}
+			},
+			_ => {} 
+		}
+
+		// momentary switch
+		println!("[MIDI][WINE]: event {:?} | intensity: {}", channel, intensity);
+		ms.is_reset = channel == self.cfg.reset && intensity > 64;
 	}
 
 	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {

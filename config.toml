@@ -56,25 +56,25 @@ modulo_param      = 14 # 3_bottom_knob
 # these are ordered by the sorted file names of the plugin functions 
 # the file prefixed by 1_ is the first item in this function
 fns = [
-	24, # M Button Spiral
-	25, # N Button V2
-	26, # O Button Waves
-	27, # P Button Audio
-	31  # L Button Solid
+	24, # C0  Spiral
+	25, # C#0 V2
+	26, # D0  Waves
+	12, # C-1 Audio
+	27  # L Button Solid
 	    # ??       Something
 ]
 name              = "WINE ALSA Output #1"
-intensity         = 0 # ??
-decay_factor      = 0 # ??
-lum_mod           = 0 # ??
-time_dialation    = 0 # ??
-reset             = 0 # ??
-backwards         = 0 # ??
-is_fft            = 0 # ??
-is_listening_midi = 0 # ??
-is_saving_preset  = 0 # ??
-decay_param       = 0 # ??
-modulo_param      = 0 # ??
+intensity         = 0  # ??
+decay_factor      = 0  # ??
+lum_mod           = 0  # ??
+time_dialation    = 0  # ??
+reset             = 13 # C#-1
+backwards         = 0  # ??
+is_fft            = 0  # ??
+is_listening_midi = 0  # ??
+is_saving_preset  = 0  # ??
+decay_param       = 0  # ??
+modulo_param      = 0  # ??
 
 ["Pioneer DJ XDJ-RX2"]
 # these are ordered by the sorted file names of the plugin functions 
