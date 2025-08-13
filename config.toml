@@ -60,7 +60,7 @@ fns = [
 	25, # C#0 V2
 	26, # D0  Waves
 	12, # C-1 Audio
-	27  # L Button Solid
+	27  # D#0 Solid
 	    # ??       Something
 ]
 name              = "WINE ALSA Output #1"
