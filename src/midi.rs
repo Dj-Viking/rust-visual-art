@@ -121,10 +121,7 @@ impl Midi {
 			  && ms.well_known_ccs.iter().any(|cc| *cc == channel) => 
 			{ 
 				println!("[MIDI][WINE]: fn midi\n            channel: {:?} | intensity: {}", channel, intensity);
-				match self.cfg.fns.iter().position(|f| *f == channel) {
-					Some(i) => { ms.save_state.active_func = i; },
-					None => (), 
-				}
+				self.set_active_func(channel, ms);
 			},
 			_ => {} 
 		}
@@ -133,6 +130,13 @@ impl Midi {
 		// two note on messages in series with intensities like 127,1 and ignore the note-off
 		println!("[MIDI][WINE]: event {:?} | intensity: {}", channel, intensity);
 		ms.is_reset = channel == self.cfg.reset && intensity > 65;
+	}
+
+	fn set_active_func(&self, channel: u8, ms: &mut crate::MutState) -> () {
+		match self.cfg.fns.iter().position(|f| *f == channel) {
+			Some(i) => { ms.save_state.active_func = i; },
+			None => (),
+		}
 	}
 
 	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
@@ -198,10 +202,7 @@ impl Midi {
 				// the DeviceConfig control values
 				if ms.well_known_ccs.iter().any(|cc| *cc == channel) {
 					println!("[MIDI]: switching function midi channel used {:?}", channel);
-					match self.cfg.fns.iter().position(|f| *f == channel) {
-						Some(i) => { ms.save_state.active_func = i; },
-						None => (), 
-					}
+					self.set_active_func(channel, ms);
 				} else {
 					// cc was not a device config cc - it's a user defined cc for a visual patch
 					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {

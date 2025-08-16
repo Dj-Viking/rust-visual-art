@@ -330,7 +330,7 @@ fn main() {
 		// watch plugin file changes if user passed hmr as a cli arg
 		if unsafe { HMR_ON } {
 			std::thread::spawn(move || {
-				watch(&*PLUGIN_PATH, &ms_);
+				utils::watch(&*PLUGIN_PATH, &ms_);
 			});
 		}
 
@@ -392,11 +392,11 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 
-	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| {
+	let set_active_func = |mut ms: MutexGuard<MutState>, afn: ActiveFunc| {
 		println!("[MAIN]: active func {:?}", ms.save_state.active_func);
-		match ms.plugins.len().cmp(&(n.clone() as usize)) {
-			std::cmp::Ordering::Less => eprintln!("[MAIN]: plugin {:?} not loaded", n),
-			_ => ms.save_state.active_func = n as usize,
+		match ms.plugins.len().cmp(&(afn.clone() as usize)) {
+			std::cmp::Ordering::Less => eprintln!("[MAIN]: plugin {:?} not loaded", afn),
+			_ => ms.save_state.active_func = afn as usize,
 		}
 	};
 
@@ -527,58 +527,4 @@ fn view(app: &App, s: &State, frame: Frame) {
 	draw.to_frame(app, &frame).unwrap();
 }
 
-fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
-	let (tx, rx) = std::sync::mpsc::channel();
-
-	use notify::Watcher;
-	let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
-
-	// Add a path to be watched. All files and directories at that path and
-	// below will be monitored for changes.
-	// ....nonrecursive does the same thing as recursive but whatever....
-	watcher.watch(path.as_ref(), notify::RecursiveMode::NonRecursive).unwrap();
-
-	let mut event_count = 0;
-
-	for res in rx { match res {
-		Ok(event) => {
-			if event.kind == notify::event::EventKind::Remove(
-				notify::event::RemoveKind::File
-			) {
-
-				let lib_name = event.paths[0]
-					.to_str().unwrap()
-					.split("/")
-					.last().unwrap();
-
-				event_count += 1;
-
-				println!("[MAIN]: lib removed: {:?}", lib_name);
-				// wait for files to be fully removed
-				// and recreated by the build script
-				// kind of a weird hack because an event is fired for each File
-				// in the plugin path but I need to wait for all the files
-				// to be replaced
-				if event_count == unsafe { PLUGS_COUNT * 4 } {
-
-					println!("[MAIN]: event count {:?}", event_count);
-
-					let mut ms = ms_.lock().unwrap();
-
-					println!("[MAIN]: \n=========\n watch event: {:?}", event.kind);
-
-					event_count = 0;
-
-					println!("[MAIN]: [INFO]: reloading plugins");
-					std::thread::sleep(
-						std::time::Duration::from_millis(
-							100));
-					ms.plugins.clear();
-					loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
-				}
-			}
-		},
-		Err(error) => println!("[MAIN]: Error: {:?}", error),
-	} }
-}
 
