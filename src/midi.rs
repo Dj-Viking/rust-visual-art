@@ -24,18 +24,20 @@ pub struct DeviceConfig {
 	pub name:              String,
 }
 impl DeviceConfig {
-	pub fn get(&self, key: String) -> Option<u64> {
+	pub fn get(&self, key: String) -> Option<u8> {
 		let json = serde_json::to_value(self).unwrap();
 
-		// Value enum variants of Number don't have as_u8 method
-		// so i'll just downcast it later i guess
-		if let Value::Object(map) = json {
-			if key != "name".to_string() || key != "fns".to_string() {
-				return map.get(&key).unwrap().as_u64();
-			}
+		if key.as_str() == "name"
+		|| key.as_str() == "fns"
+		{
+			return None;
 		}
 
-		None
+		if let Value::Object(map) = json {
+			return Some(map.get(&key).unwrap().as_u64().unwrap() as u8);
+		} else {
+			None
+		}
 	}
 	pub fn keys(&self) -> Vec<String> {
 		let json = serde_json::to_value(self).unwrap();
@@ -53,7 +55,7 @@ impl DeviceConfig {
 #[derive(Debug)]
 pub struct Midi {
 	pub dev: DeviceInfo,
-	cfg: DeviceConfig,
+	pub cfg: DeviceConfig,
 }
 
 impl Midi {
@@ -84,14 +86,84 @@ impl Midi {
 				}) 
 			},
 			None => {
-				Err("blah".into())
+				Err("couldn't init midi struct".into())
 			},
 		}
 
 	}
 
 	// TODO: setup a debugger?? :o
-	pub fn handle_msg(&self, me: MidiEvent, ms: &mut MutState) {
+	pub fn handle_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+
+		match self.cfg.name.as_str() {
+			"XONE:K2 " | "XONE:K2" => self.handle_xonek2_msg(me, ms),
+			"WINE ALSA Output #1"  => self.handle_ableton_msg(me, ms),
+			"Pioneer DJ XDJ-RX2"   => self.handle_rx2_msg(me, ms),
+			_ => {
+				println!("[MIDI][INFO]: unknown controller name - not yet configured");
+			},
+		}
+
+	}
+
+	// private:
+	fn handle_ableton_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+		let channel   = me.message.data1;
+
+		// intensity value which I think is 64 for note-off message
+		let intensity = me.message.data2;
+
+		match channel {
+			_ if intensity >= 65 
+			  || intensity == 127 
+			  && ms.well_known_ccs.iter().any(|cc| *cc == channel) => 
+			{ 
+				println!("[MIDI][WINE]: fn midi\n            channel: {:?} | intensity: {}", channel, intensity);
+				self.set_active_func(channel, ms);
+			},
+			_ => {} 
+		}
+
+		// the only way this can seem 'momentary' with using ableton is if i send
+		// two note on messages in series with intensities like 127,1 and ignore the note-off
+		println!("[MIDI][WINE]: event {:?} | intensity: {}", channel, intensity);
+		ms.is_reset = channel == self.cfg.reset && intensity > 65;
+	}
+
+	fn set_active_func(&self, channel: u8, ms: &mut crate::MutState) -> () {
+		match self.cfg.fns.iter().position(|f| *f == channel) {
+			Some(i) => { ms.save_state.active_func = i; },
+			None => (),
+		}
+	}
+
+	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+		let channel   = me.message.data1;
+		let intensity = me.message.data2;
+
+		let lerp_with_range = |range| crate::utils::lerp_float(intensity, 0.0, range, 0, 127);
+
+		match channel {
+			// continuous control values
+			c if c == self.cfg.intensity        => {
+				// testing changing both with cross fader
+				ms.save_state.time_dialation    = lerp_with_range(ms.plugins[ms.save_state.active_func].time_dialation_range);
+				ms.save_state.current_intensity = lerp_with_range(ms.plugins[ms.save_state.active_func].intensity_range);
+			},
+			// c if c == self.cfg.decay_factor     => ms.save_state.decay_factor      = lerp_with_range(1.0),
+			// c if c == self.cfg.lum_mod          => ms.save_state.lum_mod           = lerp_with_range(ms.plugins[ms.save_state.active_func].lum_mod),
+			// c if c == self.cfg.modulo_param     => ms.save_state.modulo_param      = lerp_with_range(368.0),
+			// c if c == self.cfg.decay_param      => ms.save_state.decay_param       = lerp_with_range(0.9999),
+
+			_ => {
+				// not mapped by the config or the well-known cc list
+				println!("[MIDI][UNASSIGNED?]: catch-all-match-arm got bogus amogus channel? {:?}", channel);
+			},
+		}
+		
+	}
+
+	fn handle_xonek2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
@@ -148,10 +220,7 @@ impl Midi {
 				// the DeviceConfig control values
 				if ms.well_known_ccs.iter().any(|cc| *cc == channel) {
 					println!("[MIDI]: switching function midi channel used {:?}", channel);
-					match self.cfg.fns.iter().position(|f| *f == channel) {
-						Some(i) => { ms.save_state.active_func = i; },
-						None => (), 
-					}
+					self.set_active_func(channel, ms);
 				} else {
 					// cc was not a device config cc - it's a user defined cc for a visual patch
 					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {
@@ -178,10 +247,10 @@ impl Midi {
 				println!("[MIDI][UNASSIGNED?]: catch-all-match-arm got bogus amogus channel? {:?}", channel);
 			},
 		}
-
 		// momentary switch
 		ms.is_reset         = channel == self.cfg.reset            && intensity > 0;
 		ms.is_saving_preset = channel == self.cfg.is_saving_preset && intensity > 0;
-
 	}
+
+
 }

@@ -53,6 +53,7 @@ struct MutState {
 	plugins:            Vec<loading::Plugin>,
 	save_state:         SaveState,
 	user_cc_map:        HashMap<String, SaveState>,
+	controller_name:    String,
 	midi_config_fn_ccs: Vec<u8>, // assigned by the user
 	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
 }
@@ -183,14 +184,20 @@ fn main() {
 				println!("could not get midi ctx {:?}", e);
 			} 
 		}
+		
 
 		let res = utils::use_user_defined_cc_mappings();
+
+		let midi_result = match pm_ctx {
+			Ok(ref ctx) => { midi::Midi::new(&ctx) },
+			Err(e)      => { Err(format!("could not use pm ctx to create our midi helper structure {:?}", e).into()) }
+		};
 
 		let mut midi_ccs = vec![];
 		match pm_ctx {
 			Ok(ref ctx) => match utils::get_midi_ccs(&ctx) {
 				Ok(ccs) => midi_ccs = ccs,
-				Err(e) => {
+				Err(e)  => {
 					println!("could not get ccs {:?}", e);	
 				}
 			},
@@ -221,6 +228,13 @@ fn main() {
 					println!("[MAIN]: not using defined save state... using default: {:#?}", dss); 
 					dss
 				}
+			},
+			controller_name: if let Ok(midi) =  midi_result {
+				midi.cfg.name
+			} else {
+				let mut s = String::new();
+				s.push_str("default");
+				s
 			},
 			well_known_ccs: midi_ccs,
 			midi_config_fn_ccs: if let Ok((_, ref cckeys)) = res { cckeys.clone() } else {
@@ -316,7 +330,7 @@ fn main() {
 		// watch plugin file changes if user passed hmr as a cli arg
 		if unsafe { HMR_ON } {
 			std::thread::spawn(move || {
-				watch(&*PLUGIN_PATH, &ms_);
+				utils::watch(&*PLUGIN_PATH, &ms_);
 			});
 		}
 
@@ -378,15 +392,16 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 
-	let set_active_func = |mut ms: MutexGuard<MutState>, n: ActiveFunc| {
+	let set_active_func = |mut ms: MutexGuard<MutState>, afn: ActiveFunc| {
 		println!("[MAIN]: active func {:?}", ms.save_state.active_func);
-		match ms.plugins.len().cmp(&(n.clone() as usize)) {
-			std::cmp::Ordering::Less => eprintln!("[MAIN]: plugin {:?} not loaded", n),
-			_ => ms.save_state.active_func = n as usize,
+		match ms.plugins.len().cmp(&(afn.clone() as usize)) {
+			std::cmp::Ordering::Less => eprintln!("[MAIN]: plugin {:?} not loaded", afn),
+			_ => ms.save_state.active_func = afn as usize,
 		}
 	};
 
 	match key {
+		Key::A => ms.save_state.is_fft      = !ms.save_state.is_fft,
 		Key::R => ms.is_reset    = true,
 		Key::P => {
 			println!("[Main]: is_saving_preset true");
@@ -513,58 +528,4 @@ fn view(app: &App, s: &State, frame: Frame) {
 	draw.to_frame(app, &frame).unwrap();
 }
 
-fn watch(path: &str, ms_: &std::sync::Arc<Mutex<MutState>>) {
-	let (tx, rx) = std::sync::mpsc::channel();
-
-	use notify::Watcher;
-	let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
-
-	// Add a path to be watched. All files and directories at that path and
-	// below will be monitored for changes.
-	// ....nonrecursive does the same thing as recursive but whatever....
-	watcher.watch(path.as_ref(), notify::RecursiveMode::NonRecursive).unwrap();
-
-	let mut event_count = 0;
-
-	for res in rx { match res {
-		Ok(event) => {
-			if event.kind == notify::event::EventKind::Remove(
-				notify::event::RemoveKind::File
-			) {
-
-				let lib_name = event.paths[0]
-					.to_str().unwrap()
-					.split("/")
-					.last().unwrap();
-
-				event_count += 1;
-
-				println!("[MAIN]: lib removed: {:?}", lib_name);
-				// wait for files to be fully removed
-				// and recreated by the build script
-				// kind of a weird hack because an event is fired for each File
-				// in the plugin path but I need to wait for all the files
-				// to be replaced
-				if event_count == unsafe { PLUGS_COUNT * 4 } {
-
-					println!("[MAIN]: event count {:?}", event_count);
-
-					let mut ms = ms_.lock().unwrap();
-
-					println!("[MAIN]: \n=========\n watch event: {:?}", event.kind);
-
-					event_count = 0;
-
-					println!("[MAIN]: [INFO]: reloading plugins");
-					std::thread::sleep(
-						std::time::Duration::from_millis(
-							100));
-					ms.plugins.clear();
-					loading::Plugin::load_dir(*PLUGIN_PATH, &mut ms.plugins);
-				}
-			}
-		},
-		Err(error) => println!("[MAIN]: Error: {:?}", error),
-	} }
-}
 

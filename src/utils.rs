@@ -1,6 +1,6 @@
-use std::sync::{MutexGuard};
 use portmidi::PortMidi;
 use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 // returns the midiccs needed for main () entrypoint
 // i know im reading the file twice but oh well
@@ -27,7 +27,6 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 		.find(|d| 
 			d.direction() == portmidi::Direction::Input 
 			&& config.keys().any(|n| n == d.name()));
-		
 
 	match dev {
 		Some(d) => {
@@ -35,14 +34,14 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 
 			for key in config[d.name()].keys() {
 				if let Some(value) = config[d.name()].get(key) {
-					midi_ccs.push(value as u8);
+					midi_ccs.push(value);
 				}
 			}
 
 			Ok(midi_ccs)
 		},
 		None => {
-			Err("blah".into())
+			Err("could not find device".into())
 		},
 	}
 }
@@ -68,6 +67,8 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 		println!("[UTILS][MIDI]: what is cc here in save midi {}", ms.save_state.cc);
 
 		// if we're not saving default it's for midi cc map
+		// TODO: make new folder for each controller being used
+		// ex user_ss_config/<controller_name>/<cc>_save_state.toml
 		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
 		{
 			// make user ss folder if not exist
@@ -121,6 +122,61 @@ pub fn use_default_user_save_state(ss_map: &HashMap<String, crate::SaveState>) -
 	}
 
 	None
+}
+
+pub fn watch(path: &str, ms_: &std::sync::Arc<Mutex<crate::MutState>>) {
+	let (tx, rx) = std::sync::mpsc::channel();
+
+	use notify::Watcher;
+	let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+
+	// Add a path to be watched. All files and directories at that path and
+	// below will be monitored for changes.
+	// ....nonrecursive does the same thing as recursive but whatever....
+	watcher.watch(path.as_ref(), notify::RecursiveMode::NonRecursive).unwrap();
+
+	let mut event_count = 0;
+
+	for res in rx { match res {
+		Ok(event) => {
+			if event.kind == notify::event::EventKind::Remove(
+				notify::event::RemoveKind::File
+			) {
+
+				let lib_name = event.paths[0]
+					.to_str().unwrap()
+					.split("/")
+					.last().unwrap();
+
+				event_count += 1;
+
+				println!("[MAIN]: lib removed: {:?}", lib_name);
+				// wait for files to be fully removed
+				// and recreated by the build script
+				// kind of a weird hack because an event is fired for each File
+				// in the plugin path but I need to wait for all the files
+				// to be replaced
+				if event_count == unsafe { crate::PLUGS_COUNT * 4 } {
+
+					println!("[MAIN]: event count {:?}", event_count);
+
+					let mut ms = ms_.lock().unwrap();
+
+					println!("[MAIN]: \n=========\n watch event: {:?}", event.kind);
+
+					event_count = 0;
+
+					println!("[MAIN]: [INFO]: reloading plugins");
+					std::thread::sleep(
+						std::time::Duration::from_millis(
+							100));
+					ms.plugins.clear();
+					crate::loading::Plugin::load_dir(*crate::PLUGIN_PATH, &mut ms.plugins);
+				}
+			}
+		},
+		Err(error) => println!("[MAIN]: Error: {:?}", error),
+	} }
 }
 pub fn use_user_defined_cc_mappings () 
 	-> Result<
