@@ -94,8 +94,6 @@ impl Midi {
 
 	// TODO: setup a debugger?? :o
 	pub fn handle_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
-		let channel   = me.message.data1;
-		let intensity = me.message.data2;
 
 		match self.cfg.name.as_str() {
 			"XONE:K2 " | "XONE:K2" => self.handle_xonek2_msg(me, ms),
@@ -142,7 +140,27 @@ impl Midi {
 	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
-		panic!("todo");
+
+		let lerp_with_range = |range| crate::utils::lerp_float(intensity, 0.0, range, 0, 127);
+
+		match channel {
+			// continuous control values
+			c if c == self.cfg.intensity        => {
+				// testing changing both with cross fader
+				ms.save_state.time_dialation    = lerp_with_range(ms.plugins[ms.save_state.active_func].time_dialation_range);
+				ms.save_state.current_intensity = lerp_with_range(ms.plugins[ms.save_state.active_func].intensity_range);
+			},
+			// c if c == self.cfg.decay_factor     => ms.save_state.decay_factor      = lerp_with_range(1.0),
+			// c if c == self.cfg.lum_mod          => ms.save_state.lum_mod           = lerp_with_range(ms.plugins[ms.save_state.active_func].lum_mod),
+			// c if c == self.cfg.modulo_param     => ms.save_state.modulo_param      = lerp_with_range(368.0),
+			// c if c == self.cfg.decay_param      => ms.save_state.decay_param       = lerp_with_range(0.9999),
+
+			_ => {
+				// not mapped by the config or the well-known cc list
+				println!("[MIDI][UNASSIGNED?]: catch-all-match-arm got bogus amogus channel? {:?}", channel);
+			},
+		}
+		
 	}
 
 	fn handle_xonek2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
