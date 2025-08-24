@@ -401,6 +401,7 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	};
 
 	match key {
+		Key::A => ms.save_state.is_fft      = !ms.save_state.is_fft,
 		Key::R => ms.is_reset    = true,
 		Key::P => {
 			println!("[Main]: is_saving_preset true");
