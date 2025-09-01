@@ -419,10 +419,10 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 		Key::Key5 => set_active_func(ms, ActiveFunc::Solid),
 		Key::Key6 => set_active_func(ms, ActiveFunc::Something),
 
-		Key::Up    if ms.save_state.current_intensity < 255.0 => ms.save_state.current_intensity += 1.0,
-		Key::Down  if ms.save_state.current_intensity > 0.0   => ms.save_state.current_intensity -= 1.0,
-		Key::Right if ms.save_state.time_dialation    < 255.0 => ms.save_state.time_dialation    += 1.0,
-		Key::Left  if ms.save_state.time_dialation    > 0.0   => ms.save_state.time_dialation    -= 1.0,
+		Key::Up    if ms.save_state.current_intensity < 255.0 => ms.save_state.current_intensity += 0.1,
+		Key::Down  if ms.save_state.current_intensity > 0.0   => ms.save_state.current_intensity -= 0.1,
+		Key::Right if ms.save_state.time_dialation    < 255.0 => ms.save_state.time_dialation    += 0.1,
+		Key::Left  if ms.save_state.time_dialation    > 0.0   => ms.save_state.time_dialation    -= 0.1,
 
 		_ => (),
 	}

@@ -175,14 +175,14 @@ impl Midi {
 			c if c == self.cfg.backwards        && intensity == 127 => ms.is_backwards      = !ms.is_backwards,
 			c if c == self.cfg.is_fft           && intensity == 127 => ms.save_state.is_fft = !ms.save_state.is_fft,
 
-			c if c == self.cfg.is_listening_midi     && intensity == 127 => {
+			c if c == self.cfg.is_listening_midi && intensity == 127 => {
 				println!("[MIDI]: is_listening_midi - true");
 				ms.is_listening_midi = !ms.is_listening_midi;
 			},
-			c if c == self.cfg.is_saving_preset && intensity == 127 => {
+			c if c == self.cfg.is_saving_preset && intensity == 127  => {
 				println!("[MIDI]: is_saving_preset - true");
 			},
-			c if c == self.cfg.is_saving_preset && intensity == 0   => {
+			c if c == self.cfg.is_saving_preset && intensity == 0    => {
 				println!("[MIDI]: is_saving_preset - false");
 			}
 
