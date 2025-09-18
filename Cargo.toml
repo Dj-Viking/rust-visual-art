@@ -20,6 +20,8 @@ libloading = "0.8"
 notify = "8.0"
 memprint = "0.2.0"
 serde_json = "1.0.142"
+serialport = "4.7.3"
+palette = "0.7.6"
 
 
 [profile.release]
