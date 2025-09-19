@@ -1,8 +1,8 @@
 [0]
 cc = 0
-active_func = 0
+active_func = 4
 is_fft = false
-current_intensity = 1.9495586156845093
+current_intensity = 0.6495583057403564
 time_dialation = -0.8425197601318359
 decay_factor = 0.05511811003088951
 lum_mod = 0.0

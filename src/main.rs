@@ -1,6 +1,10 @@
 #![allow(static_mut_refs)]
 #![allow(unused_imports)]
 
+use serialport::{available_ports, SerialPortType, SerialPort};
+use std::io::Write;
+use palette::{FromColor, Hsl, Srgb, rgb::Rgb};
+
 use portmidi::PortMidi;
 
 use nannou::prelude::*;
@@ -43,7 +47,7 @@ struct State {
 	audio_processor: Arc<Mutex<audio_processor::AudioProcessor>>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct MutState {
 	is_backwards:       bool,
 	is_reset:           bool,
@@ -51,9 +55,9 @@ struct MutState {
 	is_listening_midi:  bool,
 	is_listening_keys:  bool,
 	plugins:            Vec<loading::Plugin>,
+	usb_tty_port:       Box<dyn SerialPort>,
 	save_state:         SaveState,
 	user_cc_map:        HashMap<String, SaveState>,
-	controller_name:    String,
 	midi_config_fn_ccs: Vec<u8>, // assigned by the user
 	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
 }
@@ -107,6 +111,7 @@ static PLUGIN_PATH:    LazyLock<&'static str> =
 		.unwrap_or("target/libs"));
 
 const SAMPLES: usize = 4096;
+const TIME_OFFSET: f32 = 100000.0;
 static mut PLUGS_COUNT: u8 = 0;
 
 pub static mut HMR_ON: bool = false;
@@ -166,6 +171,11 @@ fn main() {
 
 	let init = |a: &App| {
 
+		let usb = serialport::new("/dev/ttyACM0", 115_200)
+			.timeout(std::time::Duration::from_millis(1))
+			.open()
+			.expect("this to work");
+
 		// letting this fail because I don't want main necessarily to be wrapped in a result yet
 		// if this fails that means you don't have a controller plugged in
 
@@ -214,6 +224,7 @@ fn main() {
 				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
 				p
 			},
+			usb_tty_port: usb,
 			// loading in the save state if we did not pass 'hmr' as a cli arg to cargo
 			save_state: { 
 				// hot reloading not that useful in this configuration
@@ -229,13 +240,6 @@ fn main() {
 					dss
 				}
 			},
-			controller_name: if let Ok(midi) =  midi_result {
-				midi.cfg.name
-			} else {
-				let mut s = String::new();
-				s.push_str("default");
-				s
-			},
 			well_known_ccs: midi_ccs,
 			midi_config_fn_ccs: if let Ok((_, ref cckeys)) = res { cckeys.clone() } else {
 				vec![]
@@ -245,8 +249,10 @@ fn main() {
 				let mut hm = HashMap::<String, SaveState>::new();
 				hm.insert("0".to_string(), dss);
 				hm
-			} ,
-			..Default::default()
+			},
+			is_backwards:     false,
+			is_reset:         false,
+			is_saving_preset: false,
 		}));
 
 		// can't easily move this block :(
@@ -428,8 +434,7 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 	}
 }
 
-fn update(_app: &App, state: &mut State,_update: Update) {
-	
+fn update(_app: &App, state: &mut State, _update: Update) {
 
 	let mut ms = state.ms.lock().unwrap();
 
@@ -500,9 +505,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 		if ms.is_reset { unsafe { TIME = 0.0; } }
 
-
-		const TIME_OFFSET: f32 = 100000.0;
-
 		let mut hue: f32 = 0.0;
 		if ms.plugins.len() != 0 {
 			let t: f32 = unsafe { TIME } / (
@@ -515,17 +517,56 @@ fn view(app: &App, s: &State, frame: Frame) {
 			hue = ms.plugins[ms.save_state.active_func].call(r.x(), r.y(), t);
 		}
 
-
-
 		let lum = if ms.save_state.is_fft {
-			utils::lerp_float((mags[i as usize] + ms.save_state.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
+			utils::lerp_float(
+				(
+					mags[i as usize] + ms.save_state.lum_mod
+				).ceil() as u8, 0.01, 0.6, 0, 100
+			)
 		} else { 0.5 };
+
+		// if r.x() == 0.0 && r.y() == 0.0 {
+		// }
+		//
 
 		draw.rect().xy(r.xy()).wh(r.wh())
 			.hsl(hue, 1.0, lum);
 	}
 
+	let t: f32 = unsafe { TIME } / (
+			ms.plugins[ms.save_state.active_func].time_divisor
+			+ TIME_OFFSET
+			* (ms.save_state.time_dialation / 10.0)
+		)
+		+ ms.save_state.current_intensity / 100.0;
+
+	let hue = ms.plugins[ms.save_state.active_func]
+		.call(10.0, 10.0, t);
+
+	println!("{}", hue);
+
+	let lum = if ms.save_state.is_fft {
+		utils::lerp_float(
+			(mags[0 as usize] + ms.save_state.lum_mod)
+				.ceil() as u8, 0.01, 0.6, 0, 100)
+	} else { 0.5 };
+
+	let rgb: Rgb<Srgb, u8> = Rgb::from_color(
+		Hsl::new(hue, 1.0, lum)
+	).into_format();
+
+	let grb = [
+		rgb.green, 
+		rgb.red, 
+		rgb.blue
+	];
+
+	println!("{:#?}", grb);
+
+	ms.usb_tty_port.write(&[
+		grb[0], grb[1], grb[2],
+		grb[0], grb[1], grb[2],
+	]).unwrap();
+
 	draw.to_frame(app, &frame).unwrap();
 }
-
-
