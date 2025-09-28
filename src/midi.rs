@@ -222,11 +222,9 @@ impl Midi {
 					println!("[MIDI]: switching function midi channel used {:?}", channel);
 					self.set_active_func(channel, ms);
 				} else {
-					// cc was not a device config cc - it's a user defined cc for a visual patch
+					// cc was not a hard-coded device config cc 
+					// - it's a user defined cc for a visual patch
 					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {
-
-						// TODO: figure out how to override previously created configs
-						// check if cc map already contains a key that matches the incoming message channel
 
 						println!("[MIDI]: setting fn based on user cc mapping? {:?}", channel);
 

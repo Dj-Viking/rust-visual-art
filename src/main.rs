@@ -59,7 +59,7 @@ struct MutState {
 	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
 }
 
-#[derive(Copy, Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SaveState {
 	cc:                u8,
 	active_func:       usize,

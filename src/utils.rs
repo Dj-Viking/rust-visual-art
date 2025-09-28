@@ -64,10 +64,13 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 
 		match ms.user_cc_map.get_mut(&controller_name.clone()) 
 		{
-			Some(val) => {
-				val.insert(format!("{}", ms_ss_cc), ss_); 
+			Some(_) => {
+				ms.user_cc_map.get_mut(&controller_name.clone())
+					.unwrap()
+					.insert(format!("{}", ms_ss_cc), ss_); 
 			},
 			None => {
+				ms.midi_config_fn_ccs.push(ms_ss_cc);
 				ms.user_cc_map.insert(controller_name.clone(), HashMap::<String, crate::SaveState>::new());
 				ms.user_cc_map.get_mut(&controller_name.clone())
 				.unwrap()
@@ -83,15 +86,15 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 		// if we're not saving default it's for midi cc map
 		// TODO: make new folder for each controller being used
 		// ex user_ss_config/<controller_name>/<cc>_save_state.toml
-		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
+		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap()
 		{
 			let _ = std::fs::create_dir("user_ss_config");
 			let _ = std::fs::create_dir(format!("user_ss_config/{}", controller_name));
-			println!("[UTILS][KEYS]: user ss folder [{}] exists \n\tsaving new preset on cc {:?}", 
+			println!("[UTILS][KEYS]: user ss folder [{}] exists \n\tsaving new preset on cc {:?}",
 				controller_name, ms_ss_cc
 			);
 			let _ = std::fs::write(
-				format!("user_ss_config/{}/{}_save_state.toml", controller_name, ms_ss_cc), 
+				format!("user_ss_config/{}/{}_save_state.toml", controller_name, ms_ss_cc),
 				tomlstring
 			);
 		}
