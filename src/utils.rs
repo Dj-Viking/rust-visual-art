@@ -49,6 +49,7 @@ pub fn get_midi_ccs(pm_ctx: &portmidi::PortMidi) -> Result<Vec<u8>, Box<dyn std:
 pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 	if ms.is_saving_preset && ms.is_listening_midi {
 		let ss = crate::SaveState::new(ms);
+		let controller_name = ms.controller_name.clone();
 
 		let mut tomlstring: String = String::from(format!("[{}]", { 
 			ms.save_state.cc 
@@ -60,34 +61,39 @@ pub fn handle_save_preset_midi(ms: &mut MutexGuard<crate::MutState>) -> () {
 		// place into the existing ms.user_cc_map
 		let ms_ss_cc = ms.save_state.cc.clone();
 		let ss_ = ss.clone();
-		ms.user_cc_map.insert(format!("{}", ms_ss_cc), ss_);
 
+		match ms.user_cc_map.get_mut(&controller_name.clone()) 
+		{
+			Some(val) => {
+				val.insert(format!("{}", ms_ss_cc), ss_); 
+			},
+			None => {
+				ms.user_cc_map.insert(controller_name.clone(), HashMap::<String, crate::SaveState>::new());
+				ms.user_cc_map.get_mut(&controller_name.clone())
+				.unwrap()
+				.insert(format!("{}", ms_ss_cc), ss_); 
+			},
+		}
+
+		// create toml string
 		tomlstring.push_str(&*Box::leak(format!("\n{}", toml).into_boxed_str()));
 
-		println!("[UTILS][MIDI]: what is cc here in save midi {}", ms.save_state.cc);
+		println!("[UTILS][MIDI]: what is cc here in save midi {}\nfor controllername: {}", ms_ss_cc, controller_name);
 
 		// if we're not saving default it's for midi cc map
 		// TODO: make new folder for each controller being used
 		// ex user_ss_config/<controller_name>/<cc>_save_state.toml
 		if ms.save_state.cc != "0".to_string().parse::<u8>().unwrap() 
 		{
-			// make user ss folder if not exist
-			if let Ok(_) = std::fs::read_dir("user_ss_config") {
-				println!("[UTILS][KEYS]: user ss folder exists\n\tsaving new preset on cc {:?}", ms.save_state.cc);
-				let _ = std::fs::write(
-					format!("user_ss_config/{}_save_state.toml", ms.save_state.cc), 
-					tomlstring
-				);
-			} else {
-				println!("[UTILS][KEYS]: user ss folder did not exist\n\tsaving new preset on cc {:?}", ms.save_state.cc);
-				let _ = std::fs::create_dir("user_ss_config");
-				let _ = std::fs::write(
-					format!(
-						"user_ss_config/{}_save_state.toml", 
-						ms.save_state.cc), 
-					tomlstring
-				);
-			}
+			let _ = std::fs::create_dir("user_ss_config");
+			let _ = std::fs::create_dir(format!("user_ss_config/{}", controller_name));
+			println!("[UTILS][KEYS]: user ss folder [{}] exists \n\tsaving new preset on cc {:?}", 
+				controller_name, ms_ss_cc
+			);
+			let _ = std::fs::write(
+				format!("user_ss_config/{}/{}_save_state.toml", controller_name, ms_ss_cc), 
+				tomlstring
+			);
 		}
 
 		println!("[UTILS][KEYS]: is_listening_midi false");
@@ -178,38 +184,51 @@ pub fn watch(path: &str, ms_: &std::sync::Arc<Mutex<crate::MutState>>) {
 		Err(error) => println!("[MAIN]: Error: {:?}", error),
 	} }
 }
-pub fn use_user_defined_cc_mappings () 
+// loading presets
+pub fn use_user_defined_cc_mappings (controller_name: String)
 	-> Result<
-		(HashMap<String, crate::SaveState>, Vec<u8>), 
+		(HashMap<String, HashMap<String, crate::SaveState>>, Vec<u8>),
 		Box<dyn std::error::Error>>
 {
-	let mut hm = HashMap::<String, crate::SaveState>::new();
-	// read dir for all files
-	// parse all files into a hashmap with hashkeys are the cc number for the mapping
-	// and the values are the SaveState structs
+	let mut hm = HashMap::<String, HashMap<String, crate::SaveState>>::new();
+	hm.insert(controller_name.clone(), HashMap::<String, crate::SaveState>::new());
+	// read dir for all sub folders which are the controller names
+	// and then read that controller_name folder's toml files
+	// gather those into the midi_ccs number collection and the hashmap for
+	// recalling the state into visibility
 	
+	// search also through controller_name dir
 	std::fs::read_dir(*crate::USER_SS_CONFIG)
 		// I'll get more than one path here if there's more
 		// so then more key values would be inserted to this hashmap
-		?.into_iter().for_each(|path| {
-			//parse the toml at the dir path	
-			let config: HashMap<String, crate::SaveState> = 
-				toml::from_str(
-					&std::fs::read_to_string(path.unwrap().path()).unwrap()
-				).unwrap_or_else(|e| {
-					eprintln!("[MAIN]: Error reading save_state file: {e}");
-					std::process::exit(1);
-				});
-			
-			hm.insert(
-				config.keys().last().unwrap().to_string(),
-				config.values().last().unwrap().clone()
-			);
+		?.into_iter().for_each(|direntry| {
+			let dirpath = direntry.ok().unwrap().path();
+			std::fs::read_dir(dirpath)
+				.unwrap().into_iter().for_each(|pathentry| {
+					//parse the toml at the dir path
+					let config: HashMap<String, crate::SaveState> =
+						toml::from_str(
+							&std::fs::read_to_string(pathentry.unwrap().path()).unwrap()
+						).unwrap_or_else(|e| {
+							eprintln!("[MAIN]: Error reading save_state file: {e}");
+							std::process::exit(1);
+						});
+
+					println!("wtf is happening {:?}", hm);
+					
+					hm.get_mut(&controller_name.clone()) 
+					.unwrap()
+					.insert(
+						config.keys().last().unwrap().to_string(),
+						config.values().last().unwrap().clone()
+					); 
+					
+				})
 		});
 
 	println!("[MAIN]: user ss config cc map {:#?}", hm);
 
-	let hmkeys = hm
+	let hmkeys = hm.get(&controller_name.clone()).unwrap()
 			.keys().into_iter()
 			.map(|k| k.parse::<u8>().unwrap())
 			.collect::<Vec<u8>>();

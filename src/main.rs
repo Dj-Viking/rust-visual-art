@@ -1,5 +1,6 @@
 #![allow(static_mut_refs)]
 #![allow(unused_imports)]
+#![allow(unused)]
 
 use portmidi::PortMidi;
 
@@ -52,13 +53,13 @@ struct MutState {
 	is_listening_keys:  bool,
 	plugins:            Vec<loading::Plugin>,
 	save_state:         SaveState,
-	user_cc_map:        HashMap<String, SaveState>,
+	user_cc_map:        HashMap<String, HashMap<String, SaveState>>,
 	controller_name:    String,
 	midi_config_fn_ccs: Vec<u8>, // assigned by the user
 	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SaveState {
 	cc:                u8,
 	active_func:       usize,
@@ -186,7 +187,6 @@ fn main() {
 		}
 		
 
-		let res = utils::use_user_defined_cc_mappings();
 
 		let midi_result = match pm_ctx {
 			Ok(ref ctx) => { midi::Midi::new(&ctx) },
@@ -206,6 +206,18 @@ fn main() {
 			} 
 		}
 
+		let controller_name = if let Ok(midi) = midi_result {
+			midi.cfg.name
+		} else {
+			let mut s = String::new();
+			s.push_str("default");
+			s
+		};
+
+		let res = utils::use_user_defined_cc_mappings(controller_name.clone());
+
+		println!("what is res {:?}", res);
+
 		let ms = Arc::new(Mutex::new(MutState {
 			is_listening_keys: false,
 			is_listening_midi: false,
@@ -224,28 +236,22 @@ fn main() {
 					ss
 				} else {
 						// hot reloading is only noticable in this configuration
-					let dss = SaveState {..Default::default()};
+					let dss = SaveState::default();
 					println!("[MAIN]: not using defined save state... using default: {:#?}", dss); 
 					dss
 				}
 			},
-			controller_name: if let Ok(midi) =  midi_result {
-				midi.cfg.name
-			} else {
-				let mut s = String::new();
-				s.push_str("default");
-				s
-			},
+			controller_name: controller_name,
 			well_known_ccs: midi_ccs,
 			midi_config_fn_ccs: if let Ok((_, ref cckeys)) = res { cckeys.clone() } else {
 				vec![]
 			},
 			user_cc_map: if let Ok((ref hm, _)) = res { hm.clone() } else {
-				let dss = SaveState {..Default::default()};
-				let mut hm = HashMap::<String, SaveState>::new();
-				hm.insert("0".to_string(), dss);
+				let dss = SaveState::default();
+				let mut hm = HashMap::<String, HashMap<String, SaveState>>::new();
+				// hm["default"].insert("0".to_string(), dss);
 				hm
-			} ,
+			},
 			..Default::default()
 		}));
 

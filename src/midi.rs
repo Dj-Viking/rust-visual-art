@@ -231,7 +231,8 @@ impl Midi {
 						println!("[MIDI]: setting fn based on user cc mapping? {:?}", channel);
 
 						// recall the entire save_state to the cc mapped state value structure(s)
-						ms.save_state = ms.user_cc_map[&*format!("{}", channel)].clone()
+						let controller_name = ms.controller_name.clone();
+						ms.save_state = ms.user_cc_map[&controller_name][&*format!("{}", channel)].clone()
 
 					} else {
 						// only if we're listening to create a new mapping
