@@ -1,16 +1,15 @@
 use rustfft::{Fft, FftPlanner};
 use rustfft::num_complex::Complex;
 
-use memprint::MemPrint;
-
 use std::cmp::Ordering;
-use std::sync::{Arc};
+use std::sync::Arc;
 
 pub struct AudioProcessor {
 	pub buffer: Vec<f32>,
 	pub buffer_size: usize,
 	fft: Arc<dyn Fft<f32>>,
 }
+
 impl AudioProcessor {
 	pub fn new(sample_rate: usize, frame_rate: f32) -> Self {
 		let buffer_size = (sample_rate as f32 / frame_rate).ceil() as usize;
@@ -44,10 +43,8 @@ impl AudioProcessor {
 	}
 
 	pub fn get_magnitudes(&self, decay: f32) -> Vec<f32> {
-
 		let mut complex_input: Vec<Complex<f32>> =
-			self.buffer.iter()
-			.map(|&x| Complex::new(x, 0.0)).collect();
+			self.buffer.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
 		self.fft.process(&mut complex_input);
 
@@ -61,30 +58,16 @@ impl AudioProcessor {
 			})
 			.collect::<Vec<f32>>();
 
-		// println!("old ===============");
-		// f32::memprint_block(&mags[..10]);
-
 		// add decay
 		mags.iter_mut().zip(unsafe { DECAY_BUF.iter_mut() }).for_each(|(curr_frame, prev_frame)| {
-
-				// if the current sample is 'louder' than previous sample then
-				// apply the decay factor
+				// if the current sample is 'louder' than previous sample then apply the decay factor
 				if *curr_frame > *prev_frame {
 					*curr_frame = *prev_frame * decay;
 				}
 
-				// now set our static buffer frame to the current one for the next
-				// sample check
+				// now set our static buffer frame to the current one for the next sample check
 				*prev_frame = *curr_frame;
 			});
-
-		// println!("new ===============");
-		// f32::memprint_block(&mags[..10]);
-
-		// println!("static thingy ===========");
-		// unsafe {
-		// 	f32::memprint_block(&DECAY_BUF[..10])
-		// }
 
 		mags
 	}

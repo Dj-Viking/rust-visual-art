@@ -1,12 +1,6 @@
 use portmidi::{DeviceInfo, MidiEvent};
 use std::collections::HashMap;
 
-use std::sync::{MutexGuard};
-
-use crate::MutState;
-
-use serde_json::Value;
-
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct DeviceConfig {
 	pub backwards:         u8,
@@ -23,35 +17,7 @@ pub struct DeviceConfig {
 	pub fns:               Box<[u8]>,
 	pub name:              String,
 }
-impl DeviceConfig {
-	pub fn get(&self, key: String) -> Option<u8> {
-		let json = serde_json::to_value(self).unwrap();
 
-		if key.as_str() == "name"
-		|| key.as_str() == "fns"
-		{
-			return None;
-		}
-
-		if let Value::Object(map) = json {
-			return Some(map.get(&key).unwrap().as_u64().unwrap() as u8);
-		} else {
-			None
-		}
-	}
-	pub fn keys(&self) -> Vec<String> {
-		let json = serde_json::to_value(self).unwrap();
-		let mut keys = vec![];
-
-		if let Value::Object(map) = json {
-			for (key, _) in map {
-				keys.push(key);
-			}
-		}
-
-		keys
-	}
-}
 #[derive(Debug)]
 pub struct Midi {
 	pub dev: DeviceInfo,
@@ -59,9 +25,10 @@ pub struct Midi {
 }
 
 impl Midi {
-	pub fn new(pm_ctx: &portmidi::PortMidi) -> Result<Self, Box<dyn std::error::Error>> {
-		let devices = pm_ctx.devices()?;
+	pub fn new(ctx: &portmidi::PortMidi) -> Result<Self, Box<dyn std::error::Error>> {
+		let devices = ctx.devices()?;
 		println!("[MIDI]: devices {:?}", devices);
+
 		let mut config: HashMap<String, DeviceConfig> = 
 			toml::from_str(&std::fs::read_to_string(*crate::CONF_FILE).unwrap()).unwrap_or_else(|e| {
 				eprintln!("[MIDI]: Error reading config file: {e}");
@@ -71,30 +38,24 @@ impl Midi {
 		// TODO: rename config.toml to midi_config.toml
 		println!("loaded midi config.toml {:#?}", config);
 
-		let dev = devices.into_iter()
-			.find(|d| {
-				println!("device {:?}", d);
-				d.direction() == portmidi::Direction::Input 
+		let dev = devices.into_iter().find(|d| {
+			println!("device {:?}", d);
+			d.direction() == portmidi::Direction::Input 
 				&& config.keys().any(|n| n == d.name())
-			});
+		});
 			
 		match dev {
-			Some(d) => { 
-				Ok(Self {
-					cfg: unsafe { config.remove(d.name()).unwrap_unchecked() },
-					dev: d
-				}) 
-			},
-			None => {
-				Err("couldn't init midi struct".into())
-			},
+			Some(d) => Ok(Self {
+				cfg: unsafe { config.remove(d.name()).unwrap_unchecked() },
+				dev: d
+			}),
+			None => Err("couldn't init midi struct".into()),
 		}
 
 	}
 
 	// TODO: setup a debugger?? :o
-	pub fn handle_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
-
+	pub fn handle_msg(&self, me: MidiEvent, ms: &mut crate::MutState) {
 		match self.cfg.name.as_str() {
 			"XONE:K2 " | "XONE:K2" => self.handle_xonek2_msg(me, ms),
 			"WINE ALSA Output #1"  => self.handle_ableton_msg(me, ms),
@@ -103,21 +64,16 @@ impl Midi {
 				println!("[MIDI][INFO]: unknown controller name - not yet configured");
 			},
 		}
-
 	}
 
-	// private:
-	fn handle_ableton_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+	fn handle_ableton_msg(&self, me: MidiEvent, ms: &mut crate::MutState) {
 		let channel   = me.message.data1;
 
 		// intensity value which I think is 64 for note-off message
 		let intensity = me.message.data2;
 
 		match channel {
-			_ if intensity >= 65 
-			  || intensity == 127 
-			  && ms.well_known_ccs.iter().any(|cc| *cc == channel) => 
-			{ 
+			_ if intensity >= 65 || intensity == 127 && self.cfg.fns.contains(&channel) => { 
 				println!("[MIDI][WINE]: fn midi\n            channel: {:?} | intensity: {}", channel, intensity);
 				self.set_active_func(channel, ms);
 			},
@@ -130,14 +86,13 @@ impl Midi {
 		ms.is_reset = channel == self.cfg.reset && intensity > 65;
 	}
 
-	fn set_active_func(&self, channel: u8, ms: &mut crate::MutState) -> () {
-		match self.cfg.fns.iter().position(|f| *f == channel) {
-			Some(i) => { ms.save_state.active_func = i; },
-			None => (),
+	fn set_active_func(&self, channel: u8, ms: &mut crate::MutState) {
+		if let Some(i) = self.cfg.fns.iter().position(|f| *f == channel) {
+			ms.save_state.active_func = i;
 		}
 	}
 
-	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+	fn handle_rx2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
@@ -163,14 +118,13 @@ impl Midi {
 		
 	}
 
-	fn handle_xonek2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) -> () {
+	fn handle_xonek2_msg(&self, me: MidiEvent, ms: &mut crate::MutState) {
 		let channel   = me.message.data1;
 		let intensity = me.message.data2;
 
 		let lerp_with_range = |range| crate::utils::lerp_float(intensity, 0.0, range, 0, 127);
 
 		match channel {
-
 			// latched boolean when condition matches
 			c if c == self.cfg.backwards        && intensity == 127 => ms.is_backwards      = !ms.is_backwards,
 			c if c == self.cfg.is_fft           && intensity == 127 => ms.save_state.is_fft = !ms.save_state.is_fft,
@@ -214,30 +168,18 @@ impl Midi {
 			// updated rust. so i guess it was removed :( instead use nested match statement
 			// and if the message on certain channels that are matching the function slice of
 			// function locations in memory so i can poke at and reassign the visual patch
-			//
-			_ if intensity == 127 => { 
-				// only setting the ms active_func if the cc was in the list of well_known_ccs or
-				// the DeviceConfig control values
-				if ms.well_known_ccs.iter().any(|cc| *cc == channel) {
-					println!("[MIDI]: switching function midi channel used {:?}", channel);
-					self.set_active_func(channel, ms);
-				} else {
-					// cc was not a hard-coded device config cc 
-					// - it's a user defined cc for a visual patch
-					if !ms.is_listening_midi && ms.midi_config_fn_ccs.iter().any(|cc| *cc == channel) {
-
-						println!("[MIDI]: setting fn based on user cc mapping? {:?}", channel);
-
-						// recall the entire save_state to the cc mapped state value structure(s)
-						let controller_name = ms.controller_name.clone();
-						ms.save_state = ms.user_cc_map[&controller_name][&*format!("{}", channel)].clone()
-
-					} else {
-						// only if we're listening to create a new mapping
-						// and save a new patch to a cc mapping during the nannou update()
-						println!("[MIDI]: set save_state.cc to {:?}", channel);
-						ms.save_state.cc = channel;
-					}
+			_ if intensity == 127 && self.cfg.fns.contains(&channel) => { 
+				println!("[MIDI]: switching function midi channel used {:?}", channel);
+				self.set_active_func(channel, ms);
+			},
+			_ if intensity == 127 && ms.is_listening_midi => { 
+				println!("[MIDI]: set save_state.cc to {:?}", channel);
+				ms.save_state.cc = channel;
+			},
+			_ if intensity == 127 => {
+				if let Some(preset) = ms.preset_map.iter().find(|(c, _)| c == &ms.controller_name)
+					.and_then(|(_, presets)| presets.iter().find(|p| p.cc == channel)) {
+					ms.save_state = preset.clone();
 				}
 			},
 
@@ -250,6 +192,4 @@ impl Midi {
 		ms.is_reset         = channel == self.cfg.reset            && intensity > 0;
 		ms.is_saving_preset = channel == self.cfg.is_saving_preset && intensity > 0;
 	}
-
-
 }
