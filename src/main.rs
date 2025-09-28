@@ -249,7 +249,6 @@ fn main() {
 			user_cc_map: if let Ok((ref hm, _)) = res { hm.clone() } else {
 				let dss = SaveState::default();
 				let mut hm = HashMap::<String, HashMap<String, SaveState>>::new();
-				// hm["default"].insert("0".to_string(), dss);
 				hm
 			},
 			..Default::default()
