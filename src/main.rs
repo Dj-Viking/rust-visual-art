@@ -1,42 +1,35 @@
 #![allow(static_mut_refs)]
-#![allow(unused_imports)]
-#![allow(unused)]
 
 use portmidi::PortMidi;
 
 use nannou::prelude::*;
-use nannou_audio;
 use nannou_audio::Buffer;
 
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
-use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::HeapRb;
+
+mod args;
 
 mod midi;
 mod loading;
 mod audio_processor;
 mod utils;
+mod save_state;
+mod mutstate;
+
+use save_state::SaveState;
+use mutstate::MutState;
 
 struct InputModel {
 	producer: ringbuf::HeapProd<f32>,
 }
-struct OutputModel {
-	consumer: ringbuf::HeapCons<f32>,
-}
 
-// these must be in the order of the file names
-#[derive(Debug, Clone)]
-#[repr(usize)]
-enum ActiveFunc {
-	Spiral = 0,
-	V2,
-	Waves,
-	Audio,
-	Solid,
-	Something
-}
+// struct OutputModel {
+// 	consumer: ringbuf::HeapCons<f32>,
+// }
 
 struct State {
 	ms:              Arc<Mutex<MutState>>,
@@ -44,242 +37,69 @@ struct State {
 	audio_processor: Arc<Mutex<audio_processor::AudioProcessor>>,
 }
 
-#[derive(Default, Debug)]
-struct MutState {
-	is_backwards:       bool,
-	is_reset:           bool,
-	is_saving_preset:   bool,
-	is_listening_midi:  bool,
-	is_listening_keys:  bool,
-	plugins:            Vec<loading::Plugin>,
-	save_state:         SaveState,
-	user_cc_map:        HashMap<String, HashMap<String, SaveState>>,
-	controller_name:    String,
-	midi_config_fn_ccs: Vec<u8>, // assigned by the user
-	well_known_ccs:     Vec<u8>, // assigned in the midi config.toml
-}
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct SaveState {
-	cc:                u8,
-	active_func:       usize,
-	is_fft:            bool,
-	current_intensity: f32,
-	time_dialation:    f32,
-	decay_factor:      f32,
-	lum_mod:           f32,
-	modulo_param:      f32,
-	decay_param:       f32,
-}
-impl SaveState {
-	fn new(ms: &mut MutexGuard<'_, MutState>) -> Self {
-		Self {
-			cc:                ms.save_state.cc,
-			active_func:       ms.save_state.active_func,
-			is_fft:            ms.save_state.is_fft,
-			current_intensity: ms.save_state.current_intensity,
-			time_dialation:    ms.save_state.time_dialation,
-			decay_factor:      ms.save_state.decay_factor,
-			lum_mod:           ms.save_state.lum_mod,
-			modulo_param:      ms.save_state.modulo_param,
-			decay_param:       ms.save_state.decay_param,
-		}
-	}
-}
-
-static USER_SS_CONFIG: LazyLock<&'static str> =
-	LazyLock::new(|| std::env::var("USER_SS_CONFIG_PATH")
-		.map(|s| &*Box::leak(s.into_boxed_str()))
-		.unwrap_or("user_ss_config"));
-
-static SAVE_STATES:    LazyLock<&'static str> =
-	LazyLock::new(|| std::env::var("SAVE_STATES_PATH")
-		.map(|s| &*Box::leak(s.into_boxed_str()))
-		.unwrap_or("default_user_save_state.toml"));
+static PRESETS_DIR: LazyLock<String> =
+	LazyLock::new(|| std::env::var("PRESETS_DIR")
+		.unwrap_or(String::from("presets")));
 
 static CONF_FILE:      LazyLock<&'static str> =
 	LazyLock::new(|| std::env::var("CONF_FILE_PATH")
 		.map(|s| &*Box::leak(s.into_boxed_str()))
 		.unwrap_or("config.toml"));
 
-static PLUGIN_PATH:    LazyLock<&'static str> =
+static PLUGIN_PATH: LazyLock<String> =
 	LazyLock::new(|| std::env::var("PLUGIN_PATH")
-		.map(|s| &*Box::leak(s.into_boxed_str()))
-		.unwrap_or("target/libs"));
+		.unwrap_or(String::from("target/libs")));
 
 const SAMPLES: usize = 4096;
-static mut PLUGS_COUNT: u8 = 0;
-
-pub static mut HMR_ON: bool = false;
-
-// if enabled then fill the MutState with the user_cc_map from their own toml file
-
-pub static mut LOGUPDATE: bool = false;
-
-fn check_args() {
-
-	// list midi devices in terminal
-	if std::env::args().skip(1).any(|a| a == "list") {
-		let pm_ctx = PortMidi::new().unwrap();
-		let devices = pm_ctx.devices().unwrap();
-		devices.iter().for_each(|d| println!("[MAIN]: device {} {:?} {:?}", d.id(), d.name(), d.direction()));
-		std::process::exit(0);
-	}
-
-	if std::env::args().skip(1).any(|a| a == "hmr") {
-		unsafe { HMR_ON = true; };
-	}
-
-	if std::env::args().skip(1).any(|a| a == "logupdate") {
-		unsafe { LOGUPDATE = true; };
-	}
-
-}
-
-fn check_libs() {
-	// get the amount of plugins as part of knowing when to reload the m
-	// when the watcher detects changes
-	if let Ok(entries) = std::fs::read_dir(&*PLUGIN_PATH) {
-		for entry in entries {
-			if let Ok(_) = entry {
-				unsafe { PLUGS_COUNT += 1 };
-			}
-		}
-
-		println!("[MAIN]: plug count {}", unsafe { PLUGS_COUNT });
-	} else {
-		println!("[MAIN]: [info]: no target/libs dir existed...");
-		println!("[MAIN]: [info]: recompiling...");
-		let status = std::process::Command::new("./build_script/target/debug/build_script")
-			.output()
-			.unwrap();
-		println!("[MAIN]: [info]: {}", std::str::from_utf8(&status.stdout).unwrap());
-		println!("[MAIN]: [error]: {}", std::str::from_utf8(&status.stderr).unwrap());
-		assert!(status.status.success());
-	}
-
-}
 
 fn main() {
-
-	check_args();
-	check_libs();
-
 	let init = |a: &App| {
+		let pm_ctx = PortMidi::new().expect("could not get midi ctx");
 
-		// letting this fail because I don't want main necessarily to be wrapped in a result yet
-		// if this fails that means you don't have a controller plugged in
-
-		let ss_map: HashMap<String, SaveState> =
-			toml::from_str(&std::fs::read_to_string(*crate::SAVE_STATES).unwrap()).unwrap_or_else(|e| {
-				eprintln!("[MAIN]: Error reading save_states.toml file: {e}");
-				std::process::exit(1);
-			});
-
-		let pm_ctx = PortMidi::new();
-		match pm_ctx {
-			Ok(ref _ctx) => {
-				println!("got midi ctx");
+		let (controller_name, midi) = match midi::Midi::new(&pm_ctx) {
+			Ok(midi) => (midi.cfg.name.clone(), Some(midi)),
+			Err(e)   => {
+				println!("{e}");
+				println!("[MAIN][INFO]: keyboard mode only running"); 
+				(String::from("default"), None)
 			},
-			Err(e) => {
-				println!("could not get midi ctx {:?}", e);
-			} 
-		}
-		
-
-
-		let midi_result = match pm_ctx {
-			Ok(ref ctx) => { midi::Midi::new(&ctx) },
-			Err(e)      => { Err(format!("could not use pm ctx to create our midi helper structure {:?}", e).into()) }
 		};
-
-		let mut midi_ccs = vec![];
-		match pm_ctx {
-			Ok(ref ctx) => match utils::get_midi_ccs(&ctx) {
-				Ok(ccs) => midi_ccs = ccs,
-				Err(e)  => {
-					println!("could not get ccs {:?}", e);	
-				}
-			},
-			Err(e) => {
-				println!("could not get ccs {:?}", e);
-			} 
-		}
-
-		let controller_name = if let Ok(midi) = midi_result {
-			midi.cfg.name
-		} else {
-			let mut s = String::new();
-			s.push_str("default");
-			s
-		};
-
-		let res = utils::use_user_defined_cc_mappings(controller_name.clone());
-
-		println!("what is res {:?}", res);
 
 		let ms = Arc::new(Mutex::new(MutState {
-			is_listening_keys: false,
-			is_listening_midi: false,
+			preset_map: SaveState::from_dir(&*PRESETS_DIR),
+			save_state: SaveState::from_file(Path::new(&*PRESETS_DIR).join("default.toml"))
+				.unwrap_or_default(),
+			controller_name,
 			plugins: {
 				let mut p = Vec::new();
-				loading::Plugin::load_dir(*PLUGIN_PATH, &mut p);
+				loading::Plugin::load_dir(&*PLUGIN_PATH, &mut p);
 				p
-			},
-			// loading in the save state if we did not pass 'hmr' as a cli arg to cargo
-			save_state: { 
-				// hot reloading not that useful in this configuration
-				// more for using midi controller to switch to preset visual patches with their
-				// user_cc_config
-				if let Some(ss) = utils::use_default_user_save_state(&ss_map) {
-					println!("[MAIN]: using defined default save state {:#?}", ss_map);
-					ss
-				} else {
-						// hot reloading is only noticable in this configuration
-					let dss = SaveState::default();
-					println!("[MAIN]: not using defined save state... using default: {:#?}", dss); 
-					dss
-				}
-			},
-			controller_name: controller_name,
-			well_known_ccs: midi_ccs,
-			midi_config_fn_ccs: if let Ok((_, ref cckeys)) = res { cckeys.clone() } else {
-				vec![]
-			},
-			user_cc_map: if let Ok((ref hm, _)) = res { hm.clone() } else {
-				let dss = SaveState::default();
-				let mut hm = HashMap::<String, HashMap<String, SaveState>>::new();
-				hm
 			},
 			..Default::default()
 		}));
 
-		// can't easily move this block :(
 		// initialize midi stuff
-		if let Ok(ctx) = pm_ctx {
+		if let Some(midi) = midi {
 			let ms_ = ms.clone();
 			std::thread::spawn(move || {
-				let midi_result = midi::Midi::new(&ctx);
-				if let Ok(midi) = midi_result {
-					let mut in_port = ctx.input_port(midi.dev.clone(), 256).unwrap();
-					let mut backoff: u32 = 0;
-					loop {
-						let Ok(Some(m)) = in_port.read() else {
-							std::hint::spin_loop();
-							std::thread::sleep(std::time::Duration::from_millis(
-									(backoff * 10) as u64));
-							backoff += 1;
-							backoff %= 10;
-							continue;
-						};
+				let mut in_port = pm_ctx.input_port(midi.dev.clone(), 256).unwrap();
+				let mut backoff: u32 = 0;
+				loop {
+					let Ok(Some(m)) = in_port.read() else {
+						std::hint::spin_loop();
+						std::thread::sleep(std::time::Duration::from_millis((backoff * 10) as u64));
+						backoff += 1;
+						backoff %= 10;
+						continue;
+					};
 
-						let mut ms = ms_.lock().unwrap();
-						midi.handle_msg(m, &mut ms);
-						backoff = 0;
-					}
-				} else { println!("[MAIN][INFO]: keyboard mode only running"); }
+					let mut ms = ms_.lock().unwrap();
+					midi.handle_msg(m, &mut ms);
+					backoff = 0;
+				}
 			});
-		} 
+		}
 
 		// setup audio input
 		let audio_host = nannou_audio::Host::new();
@@ -298,9 +118,7 @@ fn main() {
 
 		let (mut prod, cons) = ringbuffer.split();
 
-		for _ in 0..SAMPLES {
-			prod.try_push(0.0).unwrap();
-		}
+		(0..SAMPLES).for_each(|_| prod.try_push(0.0).unwrap());
 
 		std::thread::spawn(move || {
 			let in_model = InputModel { producer: prod };
@@ -310,32 +128,21 @@ fn main() {
 				.build()
 				.unwrap();
 
-			// TODO: flag for feedback configuration
-			// let out_model = OutputModel { consumer: cons };
-			// let out_stream = audio_host
-			// 	.new_output_stream(out_model)
-			// 	.render(pass_out)
-			// 	.build()
-			// 	.unwrap();
-
-			// must be playing in a loop to keep the stream
-			// open
 			loop {
 				in_stream.play().unwrap();
 			}
-
-			// only if you need to hear the audio played back through the same device used for
-			// input 
-			// in a loop?? i dont remember
-			// out_stream.play().unwrap();
 		});
 
+		if args::ARGS.hmr_enable {
+			let plugs_count = std::fs::read_dir(&*PLUGIN_PATH).map_or(0, 
+				|e| e.filter(|e| e.as_ref().is_ok_and(|p| p.path().is_file())).count())
+				.try_into().unwrap_or(0u8); // FIXME: this is kinda bad since it limits us to 63 presets max
 
-		let ms_ = ms.clone();
-		// watch plugin file changes if user passed hmr as a cli arg
-		if unsafe { HMR_ON } {
+			
+
+			let ms_ = ms.clone();
 			std::thread::spawn(move || {
-				utils::watch(&*PLUGIN_PATH, &ms_);
+				utils::watch(plugs_count, &PLUGIN_PATH, &ms_);
 			});
 		}
 
@@ -345,15 +152,11 @@ fn main() {
 			.key_released(key_released)
 			.build().unwrap();
 
-		let state = State {
+		State {
 			ms,
 			consumer: cons,
 			audio_processor,
-		};
-
-		println!("state.ms mutstate {:#?}", state.ms);
-
-		state
+		}
 	};
 
 	nannou::app(init)
@@ -361,26 +164,10 @@ fn main() {
 		.run();
 }
 
-fn pass_in(model: &mut InputModel, buffer: &Buffer) -> () {
-
-	buffer.frames().for_each(|f| {
-		f.into_iter().for_each(|s| {
-			let _ = model.producer.try_push(*s);
-		});
-	});
-
-}
-
-// only if you want to hear the audio output back into the
-// device
-#[allow(unused)]
-fn pass_out(model: &mut OutputModel, buffer: &mut Buffer) -> () {
-
-	buffer.frames_mut().for_each(|f| {
-		f.iter_mut().for_each(|s| {
-			*s = model.consumer.try_pop().unwrap_or(0.0)
-		});
-	});
+fn pass_in(model: &mut InputModel, buffer: &Buffer) {
+	buffer.frames().for_each(|f| 
+		f.iter().for_each(|s| { 
+			let _ = model.producer.try_push(*s); }));
 }
 
 fn key_released(_: &App, s: &mut State, key: Key) {
@@ -397,14 +184,6 @@ fn key_released(_: &App, s: &mut State, key: Key) {
 fn key_pressed(_: &App, s: &mut State, key: Key) {
 	let mut ms = s.ms.lock().unwrap();
 
-	let set_active_func = |mut ms: MutexGuard<MutState>, afn: ActiveFunc| {
-		println!("[MAIN]: active func {:?}", ms.save_state.active_func);
-		match ms.plugins.len().cmp(&(afn.clone() as usize)) {
-			std::cmp::Ordering::Less => eprintln!("[MAIN]: plugin {:?} not loaded", afn),
-			_ => ms.save_state.active_func = afn as usize,
-		}
-	};
-
 	match key {
 		Key::A => ms.save_state.is_fft      = !ms.save_state.is_fft,
 		Key::R => ms.is_reset    = true,
@@ -417,12 +196,29 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 			ms.is_listening_keys = true;
 		}
 
-		Key::Key1 => set_active_func(ms, ActiveFunc::Spiral),
-		Key::Key2 => set_active_func(ms, ActiveFunc::V2),
-		Key::Key3 => set_active_func(ms, ActiveFunc::Waves),
-		Key::Key4 => set_active_func(ms, ActiveFunc::Audio),
-		Key::Key5 => set_active_func(ms, ActiveFunc::Solid),
-		Key::Key6 => set_active_func(ms, ActiveFunc::Something),
+		Key::Key1 => ms.set_active_func(0),
+		Key::Key2 => ms.set_active_func(1),
+		Key::Key3 => ms.set_active_func(2),
+		Key::Key4 => ms.set_active_func(3),
+		Key::Key5 => ms.set_active_func(4),
+		Key::Key6 => ms.set_active_func(5),
+		Key::Key7 => ms.set_active_func(6),
+		Key::Key8 => ms.set_active_func(7),
+		Key::Key9 => ms.set_active_func(8),
+		Key::Key0 => ms.set_active_func(9),
+
+		Key::LBracket => {
+			let (id, overflow) = ms.save_state.active_func.overflowing_sub(1);
+			let id = if overflow { ms.plugins.len() - 1 } else { id };
+			ms.set_active_func(id);
+		},
+		Key::RBracket => {
+			ms.save_state.active_func += 1;
+			if ms.save_state.active_func >= ms.plugins.len() {
+				ms.save_state.active_func = 0;
+			}
+			println!("[MAIN]: active func {:?}", ms.save_state.active_func);
+		},
 
 		Key::Up    if ms.save_state.current_intensity < 255.0 => ms.save_state.current_intensity += 0.1,
 		Key::Down  if ms.save_state.current_intensity > 0.0   => ms.save_state.current_intensity -= 0.1,
@@ -434,8 +230,6 @@ fn key_pressed(_: &App, s: &mut State, key: Key) {
 }
 
 fn update(_app: &App, state: &mut State,_update: Update) {
-	
-
 	let mut ms = state.ms.lock().unwrap();
 
 	if ms.save_state.is_fft {
@@ -448,17 +242,11 @@ fn update(_app: &App, state: &mut State,_update: Update) {
 		ap.add_samples(&buffer);
 	}
 
-	if ms.is_listening_midi {
-		utils::handle_save_preset_midi(&mut ms);
-	} else {
-		// no other thing listening for saving
-		// just keys here
-		utils::handle_save_preset_keys(&mut ms);
-	}
-
-	// println!("[MAIN]: ============");
-	// f32::memprint_block(&ap.buffer);
+	ms.save_preset().unwrap_or_else(|e| {
+		eprintln!("[MAIN]: Error saving preset: {e}");
+	});
 }
+
 
 fn view(app: &App, s: &State, frame: Frame) {
 	let draw = app.draw();
@@ -509,7 +297,7 @@ fn view(app: &App, s: &State, frame: Frame) {
 		const TIME_OFFSET: f32 = 100000.0;
 
 		let mut hue: f32 = 0.0;
-		if ms.plugins.len() != 0 {
+		if !ms.plugins.is_empty() {
 			let t: f32 = unsafe { TIME } / (
 					ms.plugins[ms.save_state.active_func].time_divisor
 					+ TIME_OFFSET
@@ -519,7 +307,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 			hue = ms.plugins[ms.save_state.active_func].call(r.x(), r.y(), t);
 		}
-
 
 
 		let lum = if ms.save_state.is_fft {
@@ -532,5 +319,3 @@ fn view(app: &App, s: &State, frame: Frame) {
 
 	draw.to_frame(app, &frame).unwrap();
 }
-
-
