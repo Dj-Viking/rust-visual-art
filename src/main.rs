@@ -306,7 +306,6 @@ fn view(app: &App, s: &State, frame: Frame) {
 			hue = ms.plugins[ms.save_state.active_func].call(r.x(), r.y(), t);
 		}
 
-
 		let lum = if ms.save_state.is_fft {
 			utils::lerp_float((mags[i as usize] + ms.save_state.lum_mod).ceil() as u8, 0.01, 0.6, 0, 100)
 		} else { 0.5 };
