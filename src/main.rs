@@ -138,8 +138,6 @@ fn main() {
 				|e| e.filter(|e| e.as_ref().is_ok_and(|p| p.path().is_file())).count())
 				.try_into().unwrap_or(0u8); // FIXME: this is kinda bad since it limits us to 63 presets max
 
-			
-
 			let ms_ = ms.clone();
 			std::thread::spawn(move || {
 				utils::watch(plugs_count, &PLUGIN_PATH, &ms_);
