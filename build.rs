@@ -3,6 +3,7 @@ use std::path::PathBuf;
 const LIBS_PATH: &str = "target/libs";
 
 fn main() {
+	let _ = std::fs::create_dir(LIBS_PATH);
 	std::fs::read_dir(LIBS_PATH).unwrap()
 		.filter_map(|entry| {
 			let path = entry.ok()?.path();
@@ -17,8 +18,6 @@ fn main() {
 }
 
 fn handle_compile_dylib(entry: &std::fs::DirEntry) {
-	let _ = std::fs::create_dir(LIBS_PATH);
-
 	let path = entry.path();
 
 	let libs_path = PathBuf::from(LIBS_PATH).join(path.file_name().unwrap());
