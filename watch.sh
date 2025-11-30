@@ -1,1 +1,1 @@
-cargo watch -w lib -x 'r --manifest-path build_script/Cargo.toml'
+cargo watch -w lib -x 'run --manifest-path build_script/Cargo.toml'
