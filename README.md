@@ -10,11 +10,11 @@
 ---
 
 ### Running the app
-You can run in either release mode ( best option ) 
+You can run in either release mode ( slow build but fast performance ) 
 ```sh
 cargo run --release
 ```
-or debug mode
+or debug mode ( fast build but not quite as fast performance )
 ```sh
 cargo run
 ```
