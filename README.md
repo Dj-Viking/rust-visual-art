@@ -50,17 +50,7 @@ sudo pacman --sync portmidi
 
 ---
 ### keyboard
-However if you don't wish to use a midi controller at the moment 
-and just use the keyboard by starting the application with `keys` as a command line argument
-to cargo.
-
-```sh
-cargo run keys
-# or release
-cargo run --release keys
-```
-
-And the visual patches can be changed currently by the number keys
+The visual patches can be changed also via the number keys
 
 The names of the patches with their numbers respectively. Which match up to the dynamically loaded libs
 by the file names prefixed with the number. This makes sure that the libs are loaded in the same order
